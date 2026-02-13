@@ -16,11 +16,13 @@ Requires-Dist: pytest>=8.0; extra == "dev"
 
 # karospace-export
 
-A small Python app + CLI that exports an AnnData `.h5ad` file into a fully static KaroSpace-compatible HTML viewer bundle.
+Export an AnnData `.h5ad` into a fully static KaroSpace-compatible viewer bundle.
 
-## Proposed Export Schema
+The export works without any backend server and can be opened from static hosting (Cloudflare Pages/R2) or locally.
 
-Output layout:
+## What You Get
+
+Output directory structure:
 
 ```text
 export_dir/
@@ -28,61 +30,66 @@ export_dir/
   manifest.json
   preview.png                  # optional
   assets/
-    obs_000.csv.gz             # metadata table (chunked)
-    obs_records_000.json.gz    # same metadata for viewer fast-load
-    var_000.csv.gz             # exported genes table
-    coords_000.json.gz         # coordinates table (chunked)
-    image.png                  # optional tissue image
+    obs_000.csv.gz
+    obs_records_000.json.gz
+    var_000.csv.gz
+    coords_000.json.gz
+    image.png                  # optional
     expression/
       gene_00000_part_000.bin.gz
       gene_00001_part_000.bin.gz
       ...
 ```
 
-`manifest.json` contains:
+Key files:
 
-- `dataset_name`
-- `n_cells`
-- `n_genes_exported`
-- `coordinate_source`
-- `annotation_columns`
-- `gene_list`
-- `asset_files` (path + byte size + kind)
-- `expression` spec (`per_gene_float32_v1`)
-- `schema_version`
-- optional `image`, `preview_path`
+- `index.html`: minimal canvas-based viewer.
+- `manifest.json`: schema + asset inventory.
+- `assets/`: metadata, coordinates, optional image, and exported gene expression chunks.
 
-## Why per-gene vectors (format B)
+## Quick Start (GUI App)
 
-Expression is exported as per-gene `float32` vectors (`gene_XXXXX_part_YYY.bin[.gz]`) instead of a full matrix blob. This allows lazy loading in the browser: the viewer loads only the selected gene on demand, which is memory-friendly for large datasets.
+### 1) Create a GUI-capable environment
 
-## Installation
+If your current Python lacks `_tkinter`, use this:
 
 ```bash
+conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
+conda activate ks-gui
+```
+
+### 2) Install this project
+
+```bash
+cd /Users/christoffer/work/karolinska/development/karospace-builder
 pip install -e .
 ```
 
-## GUI App
-
-Launch the desktop app:
+### 3) Launch app
 
 ```bash
 karospace-export-app
 ```
 
-What the GUI provides:
+If the command is not found, run:
 
-- file pickers for input/output/image/gene-list paths
-- simple controls for coordinates, annotations, genes mode, downsampling, gzip, and chunk size
-- background export with runtime logs
-- optional one-click local preview server
+```bash
+python -m karospace_export.app
+```
 
-## CLI Usage
+GUI features:
+
+- File pickers for input/output/image/gene-list paths.
+- Controls for coordinate source, annotations, gene mode, downsampling, gzip, and asset chunk size.
+- Background export with logs.
+- Optional local preview server.
+
+## Quick Start (CLI)
 
 ```bash
 karospace-export \
-  --h5ad /path/to/input.h5ad \
-  --outdir /path/to/export \
+  --h5ad /absolute/path/to/input.h5ad \
+  --outdir /absolute/path/to/export \
   --anno cell_type \
   --anno leiden \
   --genes hvgs:500 \
@@ -90,22 +97,70 @@ karospace-export \
   --max-asset-mb 16
 ```
 
-Arguments:
+Optional local serving:
 
-- `--h5ad PATH` (required)
-- `--outdir PATH` (required)
-- `--coords {obsm:spatial,obs:centroid_x_y}` (optional, auto-detected otherwise)
-- `--anno COLNAME` (repeatable)
-- `--genes MODE`
-  - `hvgs:N`
-  - `top_mean:N`
-  - `list:PATH`
-- `--image PATH` (optional)
-- `--downsample N` (optional)
-- `--gzip true/false` (default: `true`)
-- `--max-asset-mb NUMBER` (default: `16`)
-- `--serve` (optional local static server)
-- `--port` (default `8000`)
+```bash
+karospace-export \
+  --h5ad /absolute/path/to/input.h5ad \
+  --outdir /absolute/path/to/export \
+  --anno cell_type \
+  --genes top_mean:300 \
+  --serve \
+  --port 8000
+```
+
+## CLI Arguments
+
+- `--h5ad PATH` required.
+- `--outdir PATH` required.
+- `--coords {obsm:spatial,obs:centroid_x_y}` optional (auto-detect if omitted).
+- `--anno COLNAME` repeatable.
+- `--genes MODE` where mode is `hvgs:N`, `top_mean:N`, or `list:PATH`.
+- `--image PATH` optional.
+- `--downsample N` optional.
+- `--gzip true/false` default `true`.
+- `--max-asset-mb NUMBER` default `16`.
+- `--serve` optional preview server.
+- `--port` optional server port (default `8000`).
+- `--no-preview` disable `preview.png`.
+
+## Input Assumptions
+
+Expected in `.h5ad`:
+
+- `adata.obs` with annotation columns.
+- Coordinates from `adata.obsm["spatial"]` or `obs` columns `centroid_x` and `centroid_y`.
+- Optional tissue image from `adata.uns["spatial"]` or `--image PATH`.
+
+## Export Format
+
+`manifest.json` includes:
+
+- `dataset_name`
+- `n_cells`
+- `n_genes_exported`
+- `coordinate_source`
+- `annotation_columns`
+- `gene_list`
+- `asset_files`
+- `expression`
+- `schema_version`
+- optional `image`
+- optional `preview_path`
+
+Expression is stored as per-gene `float32` vectors in chunked binary files (`per_gene_float32_v1`) so the browser can lazy-load one gene at a time.
+
+## Viewer Behavior
+
+`index.html` is dependency-light and supports:
+
+- Fast point rendering in canvas.
+- Color by annotation or selected gene expression.
+- Hover tooltip with `obs` fields.
+- Category filter.
+- Point size and opacity controls.
+
+On strict `file://` browser policies, the viewer can prompt for folder access and read assets via File API.
 
 ## Python API
 
@@ -123,22 +178,51 @@ manifest = export_h5ad(
 )
 ```
 
-## Static Viewer Notes
-
-- `index.html` loads all assets with relative paths.
-- On static hosting (Cloudflare Pages/R2), it works directly.
-- On `file://` browsers that block local fetch, the viewer prompts once for the export folder and reads assets via the browser File API (still no server required).
-
 ## Example Dataset
 
 Generate a tiny synthetic `.h5ad`:
 
 ```bash
-python examples/generate_synthetic_h5ad.py
+python /Users/christoffer/work/karolinska/development/karospace-builder/examples/generate_synthetic_h5ad.py
 ```
 
-## Test
+## Troubleshooting
+
+### `No module named '_tkinter'`
+
+Your Python build does not include Tkinter. Use a dedicated Conda environment with `python=3.12` and `tk`:
 
 ```bash
-pytest
+conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
+conda activate ks-gui
+pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
+karospace-export-app
+```
+
+### `karospace-export-app` not found
+
+Reinstall in the active environment:
+
+```bash
+pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
+```
+
+Then run either:
+
+```bash
+karospace-export-app
+```
+
+or:
+
+```bash
+python -m karospace_export.app
+```
+
+## Development
+
+Run tests:
+
+```bash
+python -m pytest -q
 ```
