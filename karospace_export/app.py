@@ -10,6 +10,7 @@ import queue
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
 import webbrowser
@@ -30,6 +31,126 @@ except Exception as exc:  # pragma: no cover - platform/runtime guard
 else:
     TK_IMPORT_ERROR = None
 
+_TTK_FRAME_BASE = ttk.Frame if ttk is not None else object
+
+
+class SearchableListEditor(_TTK_FRAME_BASE):
+    def __init__(
+        self,
+        parent,
+        *,
+        label: str,
+        height: int = 8,
+        help_text: str | None = None,
+    ) -> None:
+        super().__init__(parent, style="Card.TFrame")
+        self._choices: list[str] = []
+        self._input_var = tk.StringVar(value="")
+
+        self.columnconfigure(0, weight=1)
+        ttk.Label(self, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        controls = ttk.Frame(self, style="Card.TFrame")
+        controls.grid(row=1, column=0, sticky="ew")
+        controls.columnconfigure(0, weight=1)
+
+        self.entry = ttk.Combobox(controls, textvariable=self._input_var, state="normal")
+        self.entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.entry.bind("<KeyRelease>", self._on_search)
+        self.entry.bind("<Return>", lambda _event: self.add_current())
+
+        self.add_btn = ttk.Button(controls, text="+ Add", style="Secondary.TButton", command=self.add_current)
+        self.add_btn.grid(row=0, column=1, padx=(0, 6))
+        self.remove_btn = ttk.Button(controls, text="Remove", style="Secondary.TButton", command=self.remove_selected)
+        self.remove_btn.grid(row=0, column=2, padx=(0, 6))
+        self.clear_btn = ttk.Button(controls, text="Clear", style="Secondary.TButton", command=self.clear)
+        self.clear_btn.grid(row=0, column=3)
+
+        list_wrap = ttk.Frame(self, style="Card.TFrame")
+        list_wrap.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        list_wrap.columnconfigure(0, weight=1)
+
+        self.listbox = tk.Listbox(
+            list_wrap,
+            height=height,
+            selectmode="extended",
+            activestyle="none",
+            background="#ffffff",
+            foreground="#243b53",
+            selectbackground="#2f855a",
+            selectforeground="#ffffff",
+            relief="solid",
+            bd=1,
+            highlightthickness=0,
+            font=("Avenir Next", 10),
+        )
+        self.listbox.grid(row=0, column=0, sticky="ew")
+        scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.configure(yscrollcommand=scroll.set)
+
+        if help_text:
+            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+
+    def _on_search(self, _event) -> None:
+        self._update_choices(self._input_var.get())
+
+    def _update_choices(self, query: str = "") -> None:
+        needle = query.strip().lower()
+        if not needle:
+            values = self._choices
+        else:
+            values = [item for item in self._choices if needle in item.lower()]
+        self.entry.configure(values=values[:300])
+
+    def set_choices(self, values: list[str] | tuple[str, ...]) -> None:
+        self._choices = sorted({str(v).strip() for v in values if str(v).strip()})
+        self._update_choices(self._input_var.get())
+
+    def add_current(self) -> None:
+        value = self._input_var.get().strip()
+        if not value:
+            return
+        existing = self.get_items()
+        if value in existing:
+            idx = existing.index(value)
+            self.listbox.selection_clear(0, "end")
+            self.listbox.selection_set(idx)
+            self.listbox.see(idx)
+            self._input_var.set("")
+            return
+        self.listbox.insert("end", value)
+        self._input_var.set("")
+        self._update_choices("")
+
+    def remove_selected(self) -> None:
+        for idx in reversed(self.listbox.curselection()):
+            self.listbox.delete(idx)
+
+    def clear(self) -> None:
+        self.listbox.delete(0, "end")
+
+    def set_items(self, values: list[str] | tuple[str, ...]) -> None:
+        self.clear()
+        seen: set[str] = set()
+        for raw in values:
+            value = str(raw).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            self.listbox.insert("end", value)
+
+    def get_items(self) -> list[str]:
+        return [str(v) for v in self.listbox.get(0, "end")]
+
+    def set_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        self.entry.configure(state=state)
+        self.add_btn.configure(state=state)
+        self.remove_btn.configure(state=state)
+        self.clear_btn.configure(state=state)
+        self.listbox.configure(state=state)
+
 
 @dataclass(slots=True)
 class AppResult:
@@ -45,7 +166,7 @@ class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class ExportApp(tk.Tk if tk is not None else object):
     def __init__(self) -> None:
         super().__init__()
-        self.title("KaroSpace Exporter")
+        self.title("KaroSpaceBuilder")
         self.geometry("1180x760")
         self.minsize(1024, 700)
 
@@ -54,6 +175,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._server: _ThreadingHTTPServer | None = None
         self._server_thread: threading.Thread | None = None
         self._last_outdir: Path | None = None
+        self._temp_gene_lists: list[Path] = []
 
         self._build_style()
         self._build_variables()
@@ -88,17 +210,30 @@ class ExportApp(tk.Tk if tk is not None else object):
             foreground=[("!disabled", "#1a202c")],
         )
 
+        style.configure("TNotebook", background="#efe9dd", borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            background="#edf2f7",
+            foreground="#334e68",
+            font=("Avenir Next", 10, "bold"),
+            padding=(12, 8),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", "#fffdf7"), ("active", "#d9e2ec")],
+            foreground=[("selected", "#1f2933"), ("active", "#1f2933")],
+        )
         style.configure("Good.Horizontal.TProgressbar", troughcolor="#d9e2ec", background="#2f855a")
 
     def _build_variables(self) -> None:
         self.h5ad_var = tk.StringVar()
         self.outdir_var = tk.StringVar()
         self.coords_var = tk.StringVar(value="auto")
-        self.anno_var = tk.StringVar(value="cell_type,leiden")
 
         self.genes_mode_var = tk.StringVar(value="hvgs")
         self.genes_count_var = tk.StringVar(value="500")
         self.gene_list_path_var = tk.StringVar()
+        self.advanced_open_var = tk.BooleanVar(value=False)
 
         self.image_var = tk.StringVar()
         self.downsample_var = tk.StringVar()
@@ -112,8 +247,22 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.status_var = tk.StringVar(value="Ready")
 
     def _build_layout(self) -> None:
-        root = ttk.Frame(self, style="Root.TFrame", padding=16)
-        root.pack(fill="both", expand=True)
+        shell = ttk.Frame(self, style="Root.TFrame")
+        shell.pack(fill="both", expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+
+        self.scroll_canvas = tk.Canvas(shell, background="#efe9dd", highlightthickness=0, bd=0)
+        self.scroll_canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.scroll_canvas.yview)
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        root = ttk.Frame(self.scroll_canvas, style="Root.TFrame", padding=16)
+        self._scroll_window = self.scroll_canvas.create_window((0, 0), window=root, anchor="nw")
+        root.bind("<Configure>", lambda _event: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
+        self.scroll_canvas.bind("<Configure>", self._on_canvas_configure)
+        self._bind_mousewheel_scroll()
 
         root.columnconfigure(0, weight=3)
         root.columnconfigure(1, weight=2)
@@ -129,74 +278,197 @@ class ExportApp(tk.Tk if tk is not None else object):
         side.columnconfigure(0, weight=1)
         side.rowconfigure(4, weight=1)
 
-        ttk.Label(controls, text="KaroSpace Export App", style="Header.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(controls, text="KaroSpaceBuilder", style="Header.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(
             controls,
-            text="Create a fully static viewer export from AnnData without memorizing CLI flags.",
+            text="Export AnnData into a static KaroSpace viewer bundle with guided presets and inspected field pickers.",
             style="Subheader.TLabel",
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 18))
 
-        row = 2
-        row = self._path_field(controls, row, "Input .h5ad", self.h5ad_var, choose_file=True)
-        row = self._path_field(controls, row, "Output directory", self.outdir_var, choose_file=False)
+        preset_row = ttk.Frame(controls, style="Card.TFrame")
+        preset_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        ttk.Button(preset_row, text="Default", style="Secondary.TButton", command=lambda: self._apply_preset("default")).pack(
+            side="left"
+        )
+        ttk.Button(
+            preset_row,
+            text="Pancreas",
+            style="Secondary.TButton",
+            command=lambda: self._apply_preset("pancreas"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            preset_row,
+            text="Lightweight",
+            style="Secondary.TButton",
+            command=lambda: self._apply_preset("lightweight"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Label(preset_row, text="Preset profiles for fast setup.", style="Subheader.TLabel").pack(side="left", padx=(12, 0))
 
+        notebook = ttk.Notebook(controls)
+        notebook.grid(row=3, column=0, columnspan=3, sticky="nsew")
+        controls.rowconfigure(3, weight=1)
+
+        basic_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
+        colors_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
+        advanced_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
+        help_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
+        notebook.add(basic_tab, text="Basic")
+        notebook.add(colors_tab, text="Colors & Genes")
+        notebook.add(advanced_tab, text="Advanced")
+        notebook.add(help_tab, text="Help")
+
+        basic_tab.columnconfigure(1, weight=1)
+        row = 0
+        row = self._path_field(basic_tab, row, "Input .h5ad", self.h5ad_var, choose_file=True)
+        row = self._path_field(basic_tab, row, "Output directory", self.outdir_var, choose_file=False)
         row = self._option_row(
-            controls,
+            basic_tab,
             row,
             "Coordinates",
-            widget=self._coords_dropdown(controls),
-            hint="Auto detects obsm['spatial'] or obs centroid_x/centroid_y.",
+            widget=self._coords_dropdown(basic_tab),
+            hint="auto | obsm:spatial | obs:centroid_x_y. Auto prefers obsm['spatial'] when available.",
         )
-        row = self._option_row(
-            controls,
-            row,
-            "Annotation columns",
-            widget=self._entry(controls, self.anno_var),
-            hint="Comma separated list, e.g. cell_type,leiden. Leave blank for auto-select.",
-        )
+        row = self._path_field(basic_tab, row, "Optional tissue image", self.image_var, choose_file=True, optional=True)
 
-        row = self._option_row(
-            controls,
-            row,
-            "Genes mode",
-            widget=self._genes_mode_row(controls),
-            hint="Choose HVGs/top mean with a count, or provide a gene list file.",
-        )
-
-        row = self._path_field(controls, row, "Optional tissue image", self.image_var, choose_file=True, optional=True)
-
-        downsample_container = ttk.Frame(controls, style="Card.TFrame")
+        downsample_container = ttk.Frame(basic_tab, style="Card.TFrame")
         ttk.Entry(downsample_container, textvariable=self.downsample_var, width=12).pack(side="left")
         ttk.Label(downsample_container, text="cells (blank = all)", style="Body.TLabel").pack(side="left", padx=(8, 0))
-        row = self._option_row(
-            controls,
+        self._option_row(
+            basic_tab,
             row,
             "Downsample",
             widget=downsample_container,
-            hint="Useful for lightweight demos.",
+            hint="Integer number of cells sampled with a fixed seed for reproducible lightweight exports.",
         )
 
-        max_asset_container = ttk.Frame(controls, style="Card.TFrame")
+        colors_tab.columnconfigure(0, weight=1)
+        self.additional_colors_editor = SearchableListEditor(
+            colors_tab,
+            label="additional_colors (obs columns)",
+            height=6,
+            help_text="These become available categorical colors in the viewer. Use Inspect to load obs columns.",
+        )
+        self.additional_colors_editor.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        self.groupby_editor = SearchableListEditor(
+            colors_tab,
+            label="groupby list (obs columns)",
+            height=6,
+            help_text="Extra groupby fields. In this exporter they are merged into annotation columns.",
+        )
+        self.groupby_editor.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+
+        genes_card = ttk.Frame(colors_tab, style="Card.TFrame")
+        genes_card.grid(row=2, column=0, sticky="ew")
+        genes_card.columnconfigure(0, weight=1)
+        ttk.Label(genes_card, text="Gene Selection", style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._genes_mode_row(genes_card).grid(row=1, column=0, sticky="ew")
+        ttk.Label(
+            genes_card,
+            text="genes mode: hvgs/top_mean require count, list_file reads one gene per line, manual_list writes from the list below.",
+            style="Subheader.TLabel",
+        ).grid(row=2, column=0, sticky="w", pady=(4, 8))
+        self.manual_genes_editor = SearchableListEditor(
+            genes_card,
+            label="genes list (manual_list)",
+            height=8,
+            help_text="Search var_names and build the genes list with + Add / Remove.",
+        )
+        self.manual_genes_editor.grid(row=3, column=0, sticky="ew")
+
+        advanced_tab.columnconfigure(0, weight=1)
+        adv_header = ttk.Frame(advanced_tab, style="Card.TFrame")
+        adv_header.grid(row=0, column=0, sticky="ew")
+        self.advanced_toggle_btn = ttk.Button(
+            adv_header,
+            text="Show Advanced Options",
+            style="Secondary.TButton",
+            command=self._toggle_advanced,
+        )
+        self.advanced_toggle_btn.pack(anchor="w")
+        ttk.Label(
+            adv_header,
+            text="Contains chunking, compression, preview generation, and local server settings.",
+            style="Subheader.TLabel",
+        ).pack(anchor="w", pady=(6, 0))
+
+        self.advanced_content = ttk.Frame(advanced_tab, style="Card.TFrame")
+        self.advanced_content.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        self.advanced_content.columnconfigure(1, weight=1)
+
+        max_asset_container = ttk.Frame(self.advanced_content, style="Card.TFrame")
         ttk.Entry(max_asset_container, textvariable=self.max_asset_mb_var, width=12).pack(side="left")
         ttk.Label(max_asset_container, text="MB per asset file", style="Body.TLabel").pack(side="left", padx=(8, 0))
-        row = self._option_row(
-            controls,
-            row,
+        self._option_row(
+            self.advanced_content,
+            0,
             "Asset split limit",
             widget=max_asset_container,
-            hint="Large datasets are chunked below this per-file target.",
+            hint="Float > 0. Larger values reduce file count, smaller values lower single-file size.",
         )
 
-        toggles = ttk.Frame(controls, style="Card.TFrame")
+        toggles = ttk.Frame(self.advanced_content, style="Card.TFrame")
         ttk.Checkbutton(toggles, text="Gzip assets", variable=self.gzip_var).pack(side="left")
         ttk.Checkbutton(toggles, text="Write preview.png", variable=self.preview_var).pack(side="left", padx=(14, 0))
         ttk.Checkbutton(toggles, text="Serve after export", variable=self.serve_var).pack(side="left", padx=(14, 0))
-        row = self._option_row(controls, row, "Options", widget=toggles)
+        self._option_row(self.advanced_content, 2, "Options", widget=toggles)
 
-        serve_row = ttk.Frame(controls, style="Card.TFrame")
+        serve_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
         ttk.Entry(serve_row, textvariable=self.port_var, width=10).pack(side="left")
         ttk.Label(serve_row, text="port", style="Body.TLabel").pack(side="left", padx=(8, 0))
-        row = self._option_row(controls, row, "Serve port", widget=serve_row)
+        self._option_row(
+            self.advanced_content,
+            3,
+            "Serve port",
+            widget=serve_row,
+            hint="Used only when Serve after export is enabled.",
+        )
+        self._set_advanced_visible(False)
+
+        help_tab.columnconfigure(0, weight=1)
+        help_tab.rowconfigure(0, weight=1)
+        help_text = tk.Text(
+            help_tab,
+            wrap="word",
+            background="#ffffff",
+            foreground="#243b53",
+            relief="solid",
+            bd=1,
+            highlightthickness=0,
+            padx=10,
+            pady=10,
+            height=18,
+        )
+        help_text.grid(row=0, column=0, sticky="nsew")
+        help_scroll = ttk.Scrollbar(help_tab, orient="vertical", command=help_text.yview)
+        help_scroll.grid(row=0, column=1, sticky="ns")
+        help_text.configure(yscrollcommand=help_scroll.set)
+        help_text.insert(
+            "1.0",
+            "Basic tab\n"
+            "- Input .h5ad: absolute path to your AnnData file.\n"
+            "- Output directory: folder where index.html + assets are written.\n"
+            "- Coordinates: auto tries obsm['spatial'] then obs centroid_x/centroid_y.\n"
+            "- Optional tissue image: overrides any image auto-detected from adata.uns['spatial'].\n"
+            "- Downsample: integer number of cells (blank keeps all).\n\n"
+            "Colors & Genes tab\n"
+            "- additional_colors: obs columns offered as categorical coloring fields.\n"
+            "- groupby list: additional obs columns merged into export annotations.\n"
+            "- genes mode:\n"
+            "  hvgs / top_mean -> provide count\n"
+            "  list_file -> choose a text file with one gene name per line\n"
+            "  manual_list -> build list from var_names picker\n\n"
+            "Advanced tab\n"
+            "- Asset split limit controls max per-file payload size.\n"
+            "- Gzip toggles compression for text and binary assets.\n"
+            "- Serve after export starts a local preview server.\n\n"
+            "Presets\n"
+            "- Default: balanced defaults.\n"
+            "- Pancreas: prefilled annotation and gene lists from pancreas workflow.\n"
+            "- Lightweight: fewer genes, downsample on, smaller assets.\n\n"
+            "Tip: click Inspect H5AD to load searchable dropdown choices from adata.obs and adata.var_names."
+        )
+        help_text.configure(state="disabled")
 
         button_row = ttk.Frame(controls, style="Card.TFrame")
         self.inspect_btn = ttk.Button(button_row, text="Inspect H5AD", style="Secondary.TButton", command=self._inspect_h5ad)
@@ -208,7 +480,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.stop_server_btn = ttk.Button(button_row, text="Stop Server", style="Secondary.TButton", command=self._stop_server)
         self.stop_server_btn.pack(side="left", padx=(10, 0))
 
-        row = self._option_row(controls, row, "Actions", widget=button_row)
+        button_row.grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
         ttk.Label(side, text="Runtime", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(side, textvariable=self.status_var, style="Subheader.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 12))
@@ -246,6 +518,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.log_text.configure(state="disabled")
 
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
+        self._apply_preset("default", log=False)
         self._update_genes_mode_visibility()
 
     def _path_field(
@@ -307,7 +580,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.genes_mode_combo = ttk.Combobox(
             wrap,
             textvariable=self.genes_mode_var,
-            values=["hvgs", "top_mean", "list"],
+            values=["hvgs", "top_mean", "list_file", "manual_list"],
             state="readonly",
             width=12,
         )
@@ -331,7 +604,19 @@ class ExportApp(tk.Tk if tk is not None else object):
 
     def _update_genes_mode_visibility(self) -> None:
         mode = self.genes_mode_var.get().strip().lower()
-        if mode == "list":
+        if mode == "manual_list":
+            self.genes_count_entry.pack_forget()
+            self.genes_count_label.pack_forget()
+            self.gene_list_entry.pack_forget()
+            self.gene_list_button.pack_forget()
+            if hasattr(self, "manual_genes_editor"):
+                self.manual_genes_editor.grid()
+            return
+
+        if hasattr(self, "manual_genes_editor"):
+            self.manual_genes_editor.grid_remove()
+
+        if mode == "list_file":
             self.genes_count_entry.pack_forget()
             self.genes_count_label.pack_forget()
             if not self.gene_list_entry.winfo_manager():
@@ -344,6 +629,170 @@ class ExportApp(tk.Tk if tk is not None else object):
         if not self.genes_count_entry.winfo_manager():
             self.genes_count_entry.pack(side="left", padx=(10, 0))
             self.genes_count_label.pack(side="left", padx=(8, 0))
+
+    def _toggle_advanced(self) -> None:
+        self._set_advanced_visible(not bool(self.advanced_open_var.get()))
+
+    def _set_advanced_visible(self, visible: bool) -> None:
+        self.advanced_open_var.set(bool(visible))
+        if visible:
+            self.advanced_content.grid()
+            self.advanced_toggle_btn.configure(text="Hide Advanced Options")
+        else:
+            self.advanced_content.grid_remove()
+            self.advanced_toggle_btn.configure(text="Show Advanced Options")
+
+    def _on_canvas_configure(self, event) -> None:
+        if hasattr(self, "_scroll_window"):
+            self.scroll_canvas.itemconfigure(self._scroll_window, width=event.width)
+
+    def _bind_mousewheel_scroll(self) -> None:
+        self.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
+        self.bind_all("<Button-4>", self._on_mousewheel_linux_up, add="+")
+        self.bind_all("<Button-5>", self._on_mousewheel_linux_down, add="+")
+
+    def _on_mousewheel(self, event) -> None:
+        if not hasattr(self, "scroll_canvas"):
+            return
+        if sys.platform == "darwin":
+            delta = -1 * int(event.delta)
+        else:
+            delta = -1 * int(event.delta / 120) if event.delta else 0
+        if delta == 0:
+            return
+        self.scroll_canvas.yview_scroll(delta, "units")
+
+    def _on_mousewheel_linux_up(self, _event) -> None:
+        if hasattr(self, "scroll_canvas"):
+            self.scroll_canvas.yview_scroll(-1, "units")
+
+    def _on_mousewheel_linux_down(self, _event) -> None:
+        if hasattr(self, "scroll_canvas"):
+            self.scroll_canvas.yview_scroll(1, "units")
+
+    @staticmethod
+    def _merge_unique(*groups: list[str]) -> list[str]:
+        seen: set[str] = set()
+        merged: list[str] = []
+        for group in groups:
+            for raw in group:
+                value = str(raw).strip()
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                merged.append(value)
+        return merged
+
+    def _write_manual_gene_list(self, genes: list[str]) -> Path:
+        deduped = self._merge_unique(genes)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".txt",
+            prefix="karospace_manual_genes_",
+            delete=False,
+        ) as handle:
+            handle.write("\n".join(deduped))
+            handle.write("\n")
+            path = Path(handle.name)
+        self._temp_gene_lists.append(path)
+        return path
+
+    def _cleanup_temp_gene_lists(self) -> None:
+        if not self._temp_gene_lists:
+            return
+        remaining: list[Path] = []
+        for path in self._temp_gene_lists:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                remaining.append(path)
+        self._temp_gene_lists = remaining
+
+    def _apply_preset(self, name: str, *, log: bool = True) -> None:
+        preset = str(name or "").strip().lower()
+
+        # Shared baseline.
+        if not self.h5ad_var.get().strip():
+            self.h5ad_var.set("/absolute/path/to/input.h5ad")
+        if not self.outdir_var.get().strip():
+            self.outdir_var.set(str((Path.cwd() / "karospace_export").resolve()))
+        self.coords_var.set("auto")
+        self.image_var.set("")
+        self.gzip_var.set(True)
+        self.preview_var.set(True)
+        self.serve_var.set(False)
+        self.port_var.set("8000")
+        self.max_asset_mb_var.set("16")
+        self.downsample_var.set("")
+        self.genes_count_var.set("500")
+        self.gene_list_path_var.set("")
+
+        if preset == "pancreas":
+            self.additional_colors_editor.set_items(
+                [
+                    "leiden_0.5",
+                    "leiden_1",
+                    "leiden_1.5",
+                    "leiden_2",
+                    "gmm_mana_5",
+                    "gmm_mana_8",
+                    "gmm_mana_10",
+                    "gmm_mana_12",
+                    "gmm_mana_15",
+                    "gmm_mana_20",
+                    "condition",
+                ]
+            )
+            self.groupby_editor.set_items(["sample_id", "condition"])
+            self.genes_mode_var.set("manual_list")
+            self.manual_genes_editor.set_items(
+                [
+                    "Arg1",
+                    "Cd74",
+                    "Cldn11",
+                    "Col1a2",
+                    "Ctss",
+                    "Foxp3",
+                    "Gfap",
+                    "Gpnmb",
+                    "Grn",
+                    "H2-Aa",
+                    "H2-Ab1",
+                    "H2-Eb1",
+                    "Mbp",
+                    "Meg3",
+                    "Mki67",
+                    "Ptgds",
+                    "Serpina3n",
+                ]
+            )
+            self.max_asset_mb_var.set("24")
+            self.status_var.set("Preset loaded: Pancreas")
+            label = "Pancreas"
+        elif preset == "lightweight":
+            self.additional_colors_editor.set_items(["cell_type", "leiden"])
+            self.groupby_editor.set_items(["sample_id"])
+            self.genes_mode_var.set("top_mean")
+            self.genes_count_var.set("200")
+            self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Mki67"])
+            self.downsample_var.set("50000")
+            self.max_asset_mb_var.set("8")
+            self.preview_var.set(False)
+            self.status_var.set("Preset loaded: Lightweight")
+            label = "Lightweight"
+        else:
+            self.additional_colors_editor.set_items(["cell_type", "leiden"])
+            self.groupby_editor.set_items(["sample_id", "condition"])
+            self.genes_mode_var.set("hvgs")
+            self.genes_count_var.set("500")
+            self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Gfap", "Mki67"])
+            self.status_var.set("Preset loaded: Default")
+            label = "Default"
+
+        self._update_genes_mode_visibility()
+        if log:
+            self._log(f"Applied preset: {label}")
 
     def _choose_file(self, variable: tk.StringVar, optional: bool = False) -> None:
         initial_dir = str(Path(variable.get()).expanduser().parent) if variable.get() else str(Path.cwd())
@@ -387,11 +836,39 @@ class ExportApp(tk.Tk if tk is not None else object):
                 adata = ad.read_h5ad(path)
 
             obs_cols = [str(c) for c in adata.obs.columns]
+            var_names = [str(g) for g in adata.var_names]
+            obs_col_set = set(obs_cols)
+            var_name_set = set(var_names)
+
+            self.additional_colors_editor.set_choices(obs_cols)
+            self.groupby_editor.set_choices(obs_cols)
+            self.manual_genes_editor.set_choices(var_names)
+
+            existing_additional = [name for name in self.additional_colors_editor.get_items() if name in obs_col_set]
+            if not existing_additional:
+                existing_additional = [c for c in obs_cols if c in {"cell_type", "leiden", "sample", "sample_id", "condition"}]
+                if not existing_additional:
+                    existing_additional = obs_cols[: min(4, len(obs_cols))]
+            self.additional_colors_editor.set_items(existing_additional)
+
+            existing_groupby = [name for name in self.groupby_editor.get_items() if name in obs_col_set]
+            if not existing_groupby:
+                existing_groupby = [c for c in obs_cols if c in {"sample_id", "sample", "condition", "batch", "donor"}]
+                if not existing_groupby and obs_cols:
+                    existing_groupby = [obs_cols[0]]
+            self.groupby_editor.set_items(existing_groupby)
+
+            existing_genes = [name for name in self.manual_genes_editor.get_items() if name in var_name_set]
+            if not existing_genes:
+                existing_genes = [g for g in ["Mki67", "Cd4", "Cd8a", "Gfap"] if g in var_name_set]
+                if not existing_genes:
+                    existing_genes = var_names[: min(10, len(var_names))]
+            self.manual_genes_editor.set_items(existing_genes)
+
             if obs_cols:
-                defaults = [c for c in obs_cols if c in {"cell_type", "leiden", "sample", "sample_id"}]
-                if not defaults:
-                    defaults = obs_cols[: min(4, len(obs_cols))]
-                self.anno_var.set(",".join(defaults))
+                self._log(f"Loaded {len(obs_cols)} obs columns into additional_colors/groupby pickers.")
+            if var_names:
+                self._log(f"Loaded {len(var_names)} genes into manual genes picker.")
 
             has_spatial = "spatial" in adata.obsm
             has_centroid = {"centroid_x", "centroid_y"}.issubset(set(obs_cols))
@@ -431,7 +908,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             raise ValueError(f"Input .h5ad not found: {h5ad_path}")
 
         coords = None if self.coords_var.get() == "auto" else self.coords_var.get()
-        annos = [x.strip() for x in self.anno_var.get().split(",") if x.strip()]
+        annos = self._merge_unique(self.additional_colors_editor.get_items(), self.groupby_editor.get_items())
         if not annos:
             annos = None
 
@@ -447,16 +924,22 @@ class ExportApp(tk.Tk if tk is not None else object):
             if count <= 0:
                 raise ValueError("Gene count must be > 0.")
             genes_mode = f"{mode}:{count}"
-        elif mode == "list":
+        elif mode == "list_file":
             list_path_text = self.gene_list_path_var.get().strip()
             if not list_path_text:
-                raise ValueError("Choose a gene list file for list mode.")
+                raise ValueError("Choose a gene list file for list_file mode.")
             list_path = Path(list_path_text).expanduser()
             if not list_path.exists():
                 raise ValueError(f"Gene list file not found: {list_path}")
             genes_mode = f"list:{list_path}"
+        elif mode == "manual_list":
+            manual_genes = self.manual_genes_editor.get_items()
+            if not manual_genes:
+                raise ValueError("Add at least one gene in the manual genes list.")
+            list_path = self._write_manual_gene_list(manual_genes)
+            genes_mode = f"list:{list_path}"
         else:
-            raise ValueError("Genes mode must be hvgs, top_mean, or list.")
+            raise ValueError("Genes mode must be hvgs, top_mean, list_file, or manual_list.")
 
         image_text = self.image_var.get().strip()
         image_path = Path(image_text).expanduser() if image_text else None
@@ -493,12 +976,23 @@ class ExportApp(tk.Tk if tk is not None else object):
         )
 
     def _set_busy(self, busy: bool) -> None:
-        widgets = [self.export_btn, self.inspect_btn]
+        widgets = [
+            self.export_btn,
+            self.inspect_btn,
+            self.genes_mode_combo,
+            self.genes_count_entry,
+            self.gene_list_entry,
+            self.gene_list_button,
+            self.advanced_toggle_btn,
+        ]
         for widget in widgets:
             if busy:
                 widget.state(["disabled"])
             else:
                 widget.state(["!disabled"])
+        self.additional_colors_editor.set_enabled(not busy)
+        self.groupby_editor.set_enabled(not busy)
+        self.manual_genes_editor.set_enabled(not busy)
 
         if busy:
             self.progress.start(12)
@@ -515,6 +1009,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         try:
             config = self._parse_config()
         except Exception as exc:
+            self._cleanup_temp_gene_lists()
             messagebox.showerror("Invalid options", str(exc))
             return
 
@@ -544,6 +1039,7 @@ class ExportApp(tk.Tk if tk is not None else object):
 
             if kind == "done":
                 self._set_busy(False)
+                self._cleanup_temp_gene_lists()
                 result = payload
                 assert isinstance(result, AppResult)
                 self._last_outdir = result.outdir
@@ -557,6 +1053,7 @@ class ExportApp(tk.Tk if tk is not None else object):
                 self._start_server(outdir)
             elif kind == "error":
                 self._set_busy(False)
+                self._cleanup_temp_gene_lists()
                 details = str(payload)
                 self._log("Export failed. See traceback in popup.")
                 self.status_var.set("Export failed")
@@ -650,6 +1147,10 @@ class ExportApp(tk.Tk if tk is not None else object):
             self._log(f"Open path failed: {exc}")
 
     def _on_close(self) -> None:
+        self.unbind_all("<MouseWheel>")
+        self.unbind_all("<Button-4>")
+        self.unbind_all("<Button-5>")
+        self._cleanup_temp_gene_lists()
         self._stop_server()
         self.destroy()
 

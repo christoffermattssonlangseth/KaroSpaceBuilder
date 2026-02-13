@@ -28,6 +28,7 @@ dev = [
 [project.scripts]
 karospace-export = "karospace_export.cli:main"
 karospace-export-app = "karospace_export.app:main"
+karospace-builder = "karospace_export.app:main"
 
 [tool.setuptools]
 include-package-data = true
