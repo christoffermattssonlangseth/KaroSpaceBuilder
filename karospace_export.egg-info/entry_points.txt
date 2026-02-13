@@ -1,0 +1,3 @@
+[console_scripts]
+karospace-export = karospace_export.cli:main
+karospace-export-app = karospace_export.app:main
