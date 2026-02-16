@@ -105,7 +105,15 @@ class SearchableListEditor(_TTK_FRAME_BASE):
         self.entry.configure(values=values[:300])
 
     def set_choices(self, values: list[str] | tuple[str, ...]) -> None:
-        self._choices = sorted({str(v).strip() for v in values if str(v).strip()})
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for raw in values:
+            value = str(raw).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            ordered.append(value)
+        self._choices = ordered
         self._update_choices(self._input_var.get())
 
     def add_current(self) -> None:
@@ -161,11 +169,14 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         label: str,
         height: int = 8,
         help_text: str | None = None,
+        max_visible: int = 500,
     ) -> None:
         super().__init__(parent, style="Card.TFrame")
         self._choices: list[str] = []
         self._selected_values: set[str] = set()
         self._search_var = tk.StringVar(value="")
+        self._info_var = tk.StringVar(value="")
+        self._max_visible = max(50, int(max_visible))
 
         self.columnconfigure(0, weight=1)
         ttk.Label(self, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
@@ -182,7 +193,7 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
             controls,
             text="Select all",
             style="Secondary.TButton",
-            command=self.select_all_visible,
+            command=self.select_all_matches,
         )
         self.select_all_btn.grid(row=0, column=1, padx=(0, 6))
         self.clear_btn = ttk.Button(
@@ -217,14 +228,20 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         scroll.grid(row=0, column=1, sticky="ns")
         self.listbox.configure(yscrollcommand=scroll.set)
 
-        if help_text:
-            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(self, textvariable=self._info_var, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
 
-    def _filtered_choices(self) -> list[str]:
-        needle = self._search_var.get().strip().lower()
+        if help_text:
+            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=4, column=0, sticky="w", pady=(4, 0))
+
+    def _all_matches(self, needle: str) -> list[str]:
         if not needle:
             return list(self._choices)
         return [name for name in self._choices if needle in name.lower()]
+
+    def _filtered_choices(self) -> tuple[list[str], int]:
+        needle = self._search_var.get().strip().lower()
+        matches = self._all_matches(needle)
+        return matches[: self._max_visible], len(matches)
 
     def _capture_visible_selection(self) -> None:
         visible = [str(v) for v in self.listbox.get(0, "end")]
@@ -237,12 +254,18 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
                 self._selected_values.add(visible[int(index)])
 
     def _render(self) -> None:
-        visible = self._filtered_choices()
+        visible, total_matches = self._filtered_choices()
         self.listbox.delete(0, "end")
         for idx, name in enumerate(visible):
             self.listbox.insert("end", name)
             if name in self._selected_values:
                 self.listbox.selection_set(idx)
+        if total_matches > len(visible):
+            self._info_var.set(
+                f"Showing first {len(visible)} of {total_matches} matches. Type more characters to narrow."
+            )
+        else:
+            self._info_var.set(f"{total_matches} matches.")
 
     def _on_search_changed(self) -> None:
         self._capture_visible_selection()
@@ -250,7 +273,15 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
 
     def set_choices(self, values: list[str] | tuple[str, ...]) -> None:
         self._capture_visible_selection()
-        self._choices = sorted({str(v).strip() for v in values if str(v).strip()})
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for raw in values:
+            value = str(raw).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            ordered.append(value)
+        self._choices = ordered
         allowed = set(self._choices)
         self._selected_values = {name for name in self._selected_values if name in allowed}
         self._render()
@@ -265,10 +296,10 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         selected = self._selected_values
         return [name for name in self._choices if name in selected]
 
-    def select_all_visible(self) -> None:
+    def select_all_matches(self) -> None:
         self._capture_visible_selection()
-        visible = self._filtered_choices()
-        for name in visible:
+        needle = self._search_var.get().strip().lower()
+        for name in self._all_matches(needle):
             self._selected_values.add(name)
         self._render()
 

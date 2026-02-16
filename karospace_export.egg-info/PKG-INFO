@@ -6,6 +6,7 @@ Author: KaroSpace Builder
 License: MIT
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+Requires-Dist: karospace @ git+https://github.com/christoffermattssonlangseth/KaroSpace.git
 Requires-Dist: anndata>=0.10
 Requires-Dist: numpy>=1.24
 Requires-Dist: pandas>=2.0
@@ -13,216 +14,139 @@ Requires-Dist: scipy>=1.10
 Requires-Dist: Pillow>=10.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: build
+Requires-Dist: pyinstaller>=6.0; extra == "build"
 
-# karospace-export
+# KaroSpaceBuilder
 
-Export an AnnData `.h5ad` into a fully static KaroSpace-compatible viewer bundle.
+![KaroSpaceBuilder logo](assets/logo_KSB.png)
 
-The export works without any backend server and can be opened from static hosting (Cloudflare Pages/R2) or locally.
+KaroSpaceBuilder is a desktop GUI for building KaroSpace HTML viewers from `.h5ad` files.
 
-## What You Get
+It is a front-end for KaroSpace backend functions:
+- `karospace.load_spatial_data(...)`
+- `karospace.export_to_html(...)`
 
-Output directory structure:
+The builder output is a static HTML viewer:
 
 ```text
-export_dir/
-  index.html
-  manifest.json
-  preview.png                  # optional
-  assets/
-    obs_000.csv.gz
-    obs_records_000.json.gz
-    var_000.csv.gz
-    coords_000.json.gz
-    image.png                  # optional
-    expression/
-      gene_00000_part_000.bin.gz
-      gene_00001_part_000.bin.gz
-      ...
+<output_dir>/index.html
 ```
 
-Key files:
-
-- `index.html`: minimal canvas-based viewer.
-- `manifest.json`: schema + asset inventory.
-- `assets/`: metadata, coordinates, optional image, and exported gene expression chunks.
-
-## Quick Start (GUI App)
-
-### 1) Create a GUI-capable environment
-
-If your current Python lacks `_tkinter`, use this:
+## Installation (GitHub)
 
 ```bash
-conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
-conda activate ks-gui
+git clone https://github.com/christoffermattssonlangseth/KaroSpaceBuilder
+cd KaroSpaceBuilder
 ```
 
-### 2) Install this project
+Create and activate a Python environment (Python 3.10-3.12 recommended), then install dependencies.
+
+### 1) Install KaroSpace backend
+
+If you have local source:
 
 ```bash
-cd /Users/christoffer/work/karolinska/development/karospace-builder
-pip install -e .
+python -m pip install -e /path/to/spatial-viewer
 ```
 
-### 3) Launch app
+Or install directly from GitHub:
 
 ```bash
-karospace-export-app
+python -m pip install "git+https://github.com/christoffermattssonlangseth/KaroSpace.git"
 ```
 
-If the command is not found, run:
+### 2) Install KaroSpaceBuilder
 
 ```bash
+python -m pip install -e .
+```
+
+## Launch
+
+```bash
+KaroSpaceBuilder
+```
+
+Fallback launch commands:
+
+```bash
+karospace-builder
+# or
 python -m karospace_export.app
 ```
 
-GUI features:
+## GUI Workflow
 
-- File pickers for input/output/image/gene-list paths.
-- Controls for coordinate source, annotations, gene mode, downsampling, gzip, and asset chunk size.
-- Background export with logs.
-- Optional local preview server.
+1. Set input `.h5ad` and output directory.
+2. Click **Inspect H5AD** to populate searchable dropdowns from `adata.obs` and `adata.var_names`.
+3. Pick:
+   - Section groupby
+   - Initial color
+   - Additional colors
+   - Genes mode (`hvgs`, `top_mean`, `list_file`, `manual_list`)
+4. (Optional) use Presets (`Default`, `Pancreas`, `Lightweight`).
+5. Click **Export**.
 
-## Quick Start (CLI)
+Result: `index.html` in the selected output directory.
 
-```bash
-karospace-export \
-  --h5ad /absolute/path/to/input.h5ad \
-  --outdir /absolute/path/to/export \
-  --anno cell_type \
-  --anno leiden \
-  --genes hvgs:500 \
-  --gzip true \
-  --max-asset-mb 16
-```
+## What The Builder Maps To
 
-Optional local serving:
+The GUI fields map directly to KaroSpace export arguments, including:
+- `color`, `title`, `theme`, `outline_by`
+- `min_panel_size`, `spot_size`, `downsample`
+- `additional_colors`, `genes`, `use_hvgs`, `hvg_limit`
+- `marker_genes_groupby`, `marker_genes_top_n`
+- `neighbor_stats_groupby`, `neighbor_stats_permutations`, `neighbor_stats_seed`
+- `interaction_markers_groupby` and interaction marker limits
 
-```bash
-karospace-export \
-  --h5ad /absolute/path/to/input.h5ad \
-  --outdir /absolute/path/to/export \
-  --anno cell_type \
-  --genes top_mean:300 \
-  --serve \
-  --port 8000
-```
+Coordinates modes:
+- `auto`
+- `obsm:spatial`
+- `obs:centroid_x_y` (converted to temporary `obsm['spatial']` before export)
 
-## CLI Arguments
+## Desktop Builds For Non-technical Users
 
-- `--h5ad PATH` required.
-- `--outdir PATH` required.
-- `--coords {obsm:spatial,obs:centroid_x_y}` optional (auto-detect if omitted).
-- `--anno COLNAME` repeatable.
-- `--genes MODE` where mode is `hvgs:N`, `top_mean:N`, or `list:PATH`.
-- `--image PATH` optional.
-- `--downsample N` optional.
-- `--gzip true/false` default `true`.
-- `--max-asset-mb NUMBER` default `16`.
-- `--serve` optional preview server.
-- `--port` optional server port (default `8000`).
-- `--no-preview` disable `preview.png`.
+Prebuilt app bundles can be distributed so users do not need Python/terminal.
 
-## Input Assumptions
+Download the correct binary for each machine:
+- Apple Silicon (M1/M2/M3/M4): `KaroSpaceBuilder-macos-arm64.zip`
+- Intel Mac: `KaroSpaceBuilder-macos-intel.zip`
+- Windows: `KaroSpaceBuilder-windows.zip`
 
-Expected in `.h5ad`:
-
-- `adata.obs` with annotation columns.
-- Coordinates from `adata.obsm["spatial"]` or `obs` columns `centroid_x` and `centroid_y`.
-- Optional tissue image from `adata.uns["spatial"]` or `--image PATH`.
-
-## Export Format
-
-`manifest.json` includes:
-
-- `dataset_name`
-- `n_cells`
-- `n_genes_exported`
-- `coordinate_source`
-- `annotation_columns`
-- `gene_list`
-- `asset_files`
-- `expression`
-- `schema_version`
-- optional `image`
-- optional `preview_path`
-
-Expression is stored as per-gene `float32` vectors in chunked binary files (`per_gene_float32_v1`) so the browser can lazy-load one gene at a time.
-
-## Viewer Behavior
-
-`index.html` is dependency-light and supports:
-
-- Fast point rendering in canvas.
-- Color by annotation or selected gene expression.
-- Hover tooltip with `obs` fields.
-- Category filter.
-- Point size and opacity controls.
-
-On strict `file://` browser policies, the viewer can prompt for folder access and read assets via File API.
-
-## Python API
-
-```python
-from pathlib import Path
-from karospace_export import ExportConfig, export_h5ad
-
-manifest = export_h5ad(
-    ExportConfig(
-        h5ad_path=Path("input.h5ad"),
-        outdir=Path("export"),
-        genes_mode="top_mean:300",
-        annotation_columns=["cell_type", "leiden"],
-    )
-)
-```
-
-## Example Dataset
-
-Generate a tiny synthetic `.h5ad`:
+Build locally:
 
 ```bash
-python /Users/christoffer/work/karolinska/development/karospace-builder/examples/generate_synthetic_h5ad.py
+python -m pip install -e .[build]
+python scripts/build_desktop.py
 ```
+
+Outputs:
+- macOS: `dist/KaroSpaceBuilder.app`
+- Windows: `dist/KaroSpaceBuilder/KaroSpaceBuilder.exe`
 
 ## Troubleshooting
 
 ### `No module named '_tkinter'`
 
-Your Python build does not include Tkinter. Use a dedicated Conda environment with `python=3.12` and `tk`:
+Use a Python build with Tk support (or conda with `tk`).
+
+### `Could not import 'karospace'`
+
+Install KaroSpace in the same environment, e.g.:
 
 ```bash
-conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
-conda activate ks-gui
-pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
-karospace-export-app
+python -m pip install -e /path/to/spatial-viewer
 ```
 
-### `karospace-export-app` not found
+If you see `scanpy`/`numba` import errors, use Python 3.10-3.12.
+
+### `KaroSpaceBuilder` command not found
 
 Reinstall in the active environment:
 
 ```bash
-pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
+python -m pip install -e .
 ```
 
-Then run either:
-
-```bash
-karospace-export-app
-```
-
-or:
-
-```bash
-python -m karospace_export.app
-```
-
-## Development
-
-Run tests:
-
-```bash
-python -m pytest -q
-```
+Then run `KaroSpaceBuilder` again.
