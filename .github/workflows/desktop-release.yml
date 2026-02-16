@@ -17,11 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: macos-arm64
             artifact: KaroSpaceBuilder-macos-arm64
             zip_name: KaroSpaceBuilder-macos-arm64.zip
-          - os: macos-13
+          - os: macos-15-intel
             target: macos-intel
             artifact: KaroSpaceBuilder-macos-intel
             zip_name: KaroSpaceBuilder-macos-intel.zip
