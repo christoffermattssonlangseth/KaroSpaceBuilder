@@ -153,6 +153,137 @@ class SearchableListEditor(_TTK_FRAME_BASE):
         self.listbox.configure(state=state)
 
 
+class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
+    def __init__(
+        self,
+        parent,
+        *,
+        label: str,
+        height: int = 8,
+        help_text: str | None = None,
+    ) -> None:
+        super().__init__(parent, style="Card.TFrame")
+        self._choices: list[str] = []
+        self._selected_values: set[str] = set()
+        self._search_var = tk.StringVar(value="")
+
+        self.columnconfigure(0, weight=1)
+        ttk.Label(self, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        controls = ttk.Frame(self, style="Card.TFrame")
+        controls.grid(row=1, column=0, sticky="ew")
+        controls.columnconfigure(0, weight=1)
+
+        self.search_entry = ttk.Entry(controls, textvariable=self._search_var)
+        self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.search_entry.bind("<KeyRelease>", lambda _event: self._on_search_changed())
+
+        self.select_all_btn = ttk.Button(
+            controls,
+            text="Select all",
+            style="Secondary.TButton",
+            command=self.select_all_visible,
+        )
+        self.select_all_btn.grid(row=0, column=1, padx=(0, 6))
+        self.clear_btn = ttk.Button(
+            controls,
+            text="Clear",
+            style="Secondary.TButton",
+            command=self.clear_selection,
+        )
+        self.clear_btn.grid(row=0, column=2)
+
+        list_wrap = ttk.Frame(self, style="Card.TFrame")
+        list_wrap.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        list_wrap.columnconfigure(0, weight=1)
+
+        self.listbox = tk.Listbox(
+            list_wrap,
+            height=height,
+            selectmode="extended",
+            activestyle="none",
+            background="#ffffff",
+            foreground="#243b53",
+            selectbackground="#2f855a",
+            selectforeground="#ffffff",
+            relief="solid",
+            bd=1,
+            highlightthickness=0,
+            font=("Avenir Next", 10),
+        )
+        self.listbox.grid(row=0, column=0, sticky="ew")
+        self.listbox.bind("<<ListboxSelect>>", lambda _event: self._capture_visible_selection())
+        scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.configure(yscrollcommand=scroll.set)
+
+        if help_text:
+            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+
+    def _filtered_choices(self) -> list[str]:
+        needle = self._search_var.get().strip().lower()
+        if not needle:
+            return list(self._choices)
+        return [name for name in self._choices if needle in name.lower()]
+
+    def _capture_visible_selection(self) -> None:
+        visible = [str(v) for v in self.listbox.get(0, "end")]
+        if not visible:
+            return
+        visible_set = set(visible)
+        self._selected_values = {name for name in self._selected_values if name not in visible_set}
+        for index in self.listbox.curselection():
+            if 0 <= int(index) < len(visible):
+                self._selected_values.add(visible[int(index)])
+
+    def _render(self) -> None:
+        visible = self._filtered_choices()
+        self.listbox.delete(0, "end")
+        for idx, name in enumerate(visible):
+            self.listbox.insert("end", name)
+            if name in self._selected_values:
+                self.listbox.selection_set(idx)
+
+    def _on_search_changed(self) -> None:
+        self._capture_visible_selection()
+        self._render()
+
+    def set_choices(self, values: list[str] | tuple[str, ...]) -> None:
+        self._capture_visible_selection()
+        self._choices = sorted({str(v).strip() for v in values if str(v).strip()})
+        allowed = set(self._choices)
+        self._selected_values = {name for name in self._selected_values if name in allowed}
+        self._render()
+
+    def set_selected(self, values: list[str] | tuple[str, ...]) -> None:
+        allowed = set(self._choices)
+        self._selected_values = {str(v).strip() for v in values if str(v).strip() in allowed}
+        self._render()
+
+    def get_selected(self) -> list[str]:
+        self._capture_visible_selection()
+        selected = self._selected_values
+        return [name for name in self._choices if name in selected]
+
+    def select_all_visible(self) -> None:
+        self._capture_visible_selection()
+        visible = self._filtered_choices()
+        for name in visible:
+            self._selected_values.add(name)
+        self._render()
+
+    def clear_selection(self) -> None:
+        self._selected_values.clear()
+        self._render()
+
+    def set_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        self.search_entry.configure(state=state)
+        self.select_all_btn.configure(state=state)
+        self.clear_btn.configure(state=state)
+        self.listbox.configure(state=state)
+
+
 @dataclass(slots=True)
 class AppResult:
     outdir: Path
@@ -282,6 +413,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.interaction_markers_top_genes_var = tk.StringVar(value="15")
         self.interaction_markers_min_cells_var = tk.StringVar(value="30")
         self.interaction_markers_min_neighbors_var = tk.StringVar(value="1")
+        self.selection_mode_var = tk.BooleanVar(value=False)
 
         self.downsample_var = tk.StringVar()
 
@@ -458,6 +590,70 @@ class ExportApp(tk.Tk if tk is not None else object):
         )
         self.manual_genes_editor.grid(row=3, column=0, sticky="ew")
 
+        selection_card = ttk.Frame(colors_tab, style="Card.TFrame")
+        selection_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        selection_card.columnconfigure(0, weight=1)
+        self.selection_mode_check = ttk.Checkbutton(
+            selection_card,
+            text="Enable tick selection mode (from Inspect H5AD)",
+            variable=self.selection_mode_var,
+        )
+        self.selection_mode_check.grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            selection_card,
+            text=(
+                "When enabled, selected items below are used during export for additional colors, "
+                "groupby lists, and manual genes."
+            ),
+            style="Subheader.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 8))
+
+        self.selection_mode_content = ttk.Frame(selection_card, style="Card.TFrame")
+        self.selection_mode_content.grid(row=2, column=0, sticky="ew")
+        self.selection_mode_content.columnconfigure(0, weight=1)
+        self.selection_mode_content.columnconfigure(1, weight=1)
+
+        self.selection_additional_picker = SearchableMultiSelectEditor(
+            self.selection_mode_content,
+            label="Tick additional_colors (obs)",
+            height=7,
+            help_text="Multi-select obs fields to include as additional viewer colors.",
+        )
+        self.selection_additional_picker.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self.selection_groupby_picker = SearchableMultiSelectEditor(
+            self.selection_mode_content,
+            label="Tick groupby lists (obs)",
+            height=7,
+            help_text="Multi-select obs columns for marker/neighbor/interaction groupby lists.",
+        )
+        self.selection_groupby_picker.grid(row=0, column=1, sticky="ew")
+
+        self.selection_genes_picker = SearchableMultiSelectEditor(
+            self.selection_mode_content,
+            label="Tick genes (manual_list mode)",
+            height=8,
+            help_text="Multi-select genes from var_names. Used when genes mode is manual_list.",
+        )
+        self.selection_genes_picker.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+
+        selection_actions = ttk.Frame(self.selection_mode_content, style="Card.TFrame")
+        selection_actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.selection_apply_btn = ttk.Button(
+            selection_actions,
+            text="Apply selections to inputs",
+            style="Secondary.TButton",
+            command=self._apply_tick_selections_to_inputs,
+        )
+        self.selection_apply_btn.pack(side="left")
+        self.selection_sync_btn = ttk.Button(
+            selection_actions,
+            text="Sync from current inputs",
+            style="Secondary.TButton",
+            command=self._load_inputs_into_tick_selection,
+        )
+        self.selection_sync_btn.pack(side="left", padx=(8, 0))
+
         advanced_tab.columnconfigure(0, weight=1)
         adv_header = ttk.Frame(advanced_tab, style="Card.TFrame")
         adv_header.grid(row=0, column=0, sticky="ew")
@@ -605,6 +801,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "Colors & Genes tab\n"
             "- additional_colors: obs columns offered as categorical coloring fields.\n"
             "- groupby lists: columns used for marker/neighbor/interaction analytics.\n"
+            "- Tick selection mode: optional inspected multi-select mode. Tick obs/genes and export directly without manually adding rows.\n"
             "- genes mode:\n"
             "  hvgs -> use_hvgs=True with hvg_limit from count\n"
             "  top_mean -> compute top_mean genes list from adata\n"
@@ -673,9 +870,11 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
         self.neighbor_auto_var.trace_add("write", lambda *_: self._update_neighbor_groupby_state())
+        self.selection_mode_var.trace_add("write", lambda *_: self._update_selection_mode_visibility())
         self._apply_preset("default", log=False)
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()
+        self._set_selection_mode_visible(False)
 
     def _path_field(
         self,
@@ -806,6 +1005,37 @@ class ExportApp(tk.Tk if tk is not None else object):
         # Groupby list is shared by marker/neighbor/interaction settings.
         # Keep it editable even when neighbor auto mode is enabled.
         self.groupby_editor.set_enabled(True)
+
+    def _update_selection_mode_visibility(self) -> None:
+        self._set_selection_mode_visible(bool(self.selection_mode_var.get()))
+
+    def _set_selection_mode_visible(self, visible: bool) -> None:
+        if visible:
+            self.selection_mode_content.grid()
+        else:
+            self.selection_mode_content.grid_remove()
+
+    def _load_inputs_into_tick_selection(self, *, log: bool = True) -> None:
+        self.selection_additional_picker.set_selected(self.additional_colors_editor.get_items())
+        self.selection_groupby_picker.set_selected(self.groupby_editor.get_items())
+        self.selection_genes_picker.set_selected(self.manual_genes_editor.get_items())
+        if log:
+            self._log("Selection mode synced from current input lists.")
+
+    def _apply_tick_selections_to_inputs(self) -> None:
+        additional = self.selection_additional_picker.get_selected()
+        groupby = self.selection_groupby_picker.get_selected()
+        genes = self.selection_genes_picker.get_selected()
+
+        self.additional_colors_editor.set_items(additional)
+        self.groupby_editor.set_items(groupby)
+        if genes:
+            self.manual_genes_editor.set_items(genes)
+
+        self.status_var.set("Selection picks applied")
+        self._log(
+            f"Applied selection mode picks: additional_colors={len(additional)}, groupby={len(groupby)}, genes={len(genes)}"
+        )
 
     def _toggle_advanced(self) -> None:
         self._set_advanced_visible(not bool(self.advanced_open_var.get()))
@@ -1000,6 +1230,7 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()
+        self._load_inputs_into_tick_selection(log=False)
         if log:
             self._log(f"Applied preset: {label}")
 
@@ -1052,6 +1283,9 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.additional_colors_editor.set_choices(obs_cols)
             self.groupby_editor.set_choices(obs_cols)
             self.manual_genes_editor.set_choices(var_names)
+            self.selection_additional_picker.set_choices(obs_cols)
+            self.selection_groupby_picker.set_choices(obs_cols)
+            self.selection_genes_picker.set_choices(var_names)
             if hasattr(self, "groupby_combo"):
                 self.groupby_combo.configure(values=obs_cols)
             if hasattr(self, "color_combo"):
@@ -1097,6 +1331,7 @@ class ExportApp(tk.Tk if tk is not None else object):
                 if not existing_genes:
                     existing_genes = var_names[: min(10, len(var_names))]
             self.manual_genes_editor.set_items(existing_genes)
+            self._load_inputs_into_tick_selection(log=False)
 
             if obs_cols:
                 self._log(f"Loaded {len(obs_cols)} obs columns into additional_colors/groupby pickers.")
@@ -1206,7 +1441,13 @@ class ExportApp(tk.Tk if tk is not None else object):
                 if file_obj is not None:
                     file_obj.close()
 
-    def _resolve_gene_settings(self, h5ad_path: Path, mode: str) -> tuple[list[str] | None, bool, int]:
+    def _resolve_gene_settings(
+        self,
+        h5ad_path: Path,
+        mode: str,
+        *,
+        manual_genes_override: list[str] | None = None,
+    ) -> tuple[list[str] | None, bool, int]:
         normalized = mode.strip().lower()
         if normalized == "hvgs":
             hvg_limit = self._parse_positive_int("HVG limit", self.genes_count_var.get())
@@ -1228,7 +1469,7 @@ class ExportApp(tk.Tk if tk is not None else object):
                 raise ValueError(f"Gene list file not found: {list_path}")
             genes = [line.strip() for line in list_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         elif normalized == "manual_list":
-            genes = self.manual_genes_editor.get_items()
+            genes = manual_genes_override if manual_genes_override is not None else self.manual_genes_editor.get_items()
         else:
             raise ValueError("Genes mode must be hvgs, top_mean, list_file, or manual_list.")
 
@@ -1285,9 +1526,27 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         additional_colors = self._merge_unique(self.additional_colors_editor.get_items())
         groupby_lists = self._merge_unique(self.groupby_editor.get_items())
+        selection_mode = bool(self.selection_mode_var.get())
+        manual_genes_override: list[str] | None = None
+
+        if selection_mode:
+            selected_additional = self.selection_additional_picker.get_selected()
+            selected_groupby = self.selection_groupby_picker.get_selected()
+            if selected_additional:
+                additional_colors = self._merge_unique(selected_additional)
+            if selected_groupby:
+                groupby_lists = self._merge_unique(selected_groupby)
+            if self.genes_mode_var.get().strip().lower() == "manual_list":
+                selected_genes = self.selection_genes_picker.get_selected()
+                if selected_genes:
+                    manual_genes_override = self._merge_unique(selected_genes)
 
         mode = self.genes_mode_var.get().strip().lower()
-        genes, use_hvgs, hvg_limit = self._resolve_gene_settings(h5ad_path, mode)
+        genes, use_hvgs, hvg_limit = self._resolve_gene_settings(
+            h5ad_path,
+            mode,
+            manual_genes_override=manual_genes_override,
+        )
 
         marker_genes_top_n = self._parse_positive_int("Marker genes top N", self.marker_genes_top_n_var.get())
         neighbor_permutations = self._parse_neighbor_permutations(self.neighbor_permutations_var.get())
@@ -1345,17 +1604,62 @@ class ExportApp(tk.Tk if tk is not None else object):
     @staticmethod
     def _import_karospace_api():
         import importlib
+        import importlib.metadata as importlib_metadata
 
         # scanpy imports numba with cache=True in some code paths; in certain
         # environments this crashes during import. Disable JIT by default for
         # robust GUI startup/export unless the user explicitly overrides it.
         os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 
+        def _install_metadata_version_fallback() -> None:
+            original_version = getattr(importlib_metadata, "version", None)
+            if original_version is None:
+                return
+            if getattr(original_version, "_ksb_scikit_fallback", False):
+                return
+
+            def _ksb_version_with_fallback(distribution_name: str) -> str:
+                try:
+                    return original_version(distribution_name)
+                except importlib_metadata.PackageNotFoundError as missing_error:
+                    normalized = str(distribution_name).replace("_", "-").lower()
+                    if normalized not in {"scikit-learn", "sklearn"}:
+                        raise
+                    for alias in ("scikit-learn", "scikit_learn", "sklearn"):
+                        if alias == distribution_name:
+                            continue
+                        try:
+                            return original_version(alias)
+                        except importlib_metadata.PackageNotFoundError:
+                            continue
+                    try:
+                        import sklearn  # type: ignore
+
+                        version = getattr(sklearn, "__version__", "")
+                        if version:
+                            return str(version)
+                    except Exception:
+                        pass
+                    raise missing_error
+
+            setattr(_ksb_version_with_fallback, "_ksb_scikit_fallback", True)
+            importlib_metadata.version = _ksb_version_with_fallback
+
         def _missing_module_name(error: BaseException) -> str | None:
             current: BaseException | None = error
             while current is not None:
                 if isinstance(current, ModuleNotFoundError):
                     return getattr(current, "name", None)
+                current = current.__cause__
+            return None
+
+        def _missing_metadata_name(error: BaseException) -> str | None:
+            current: BaseException | None = error
+            while current is not None:
+                if isinstance(current, importlib_metadata.PackageNotFoundError):
+                    name = getattr(current, "name", None)
+                    if name:
+                        return str(name)
                 current = current.__cause__
             return None
 
@@ -1367,12 +1671,21 @@ class ExportApp(tk.Tk if tk is not None else object):
                     "Install dependencies in this environment (for example: "
                     "pip install scanpy or pip install -e /path/to/spatial-viewer)."
                 ) from error
+            missing_metadata = _missing_metadata_name(error)
+            if missing_metadata:
+                raise RuntimeError(
+                    f"Missing package metadata for '{missing_metadata}' required by KaroSpace/scanpy. "
+                    "If you are using a desktop binary, rebuild it with updated PyInstaller metadata bundling. "
+                    "For source installs, reinstall dependencies in the active environment."
+                ) from error
             message = str(error)
             if "cannot cache function" in message and "numba" in message.lower():
                 raise RuntimeError(
                     "scanpy/numba failed during import cache initialization. "
                     "Set NUMBA_DISABLE_JIT=1 and restart KaroSpaceBuilder."
                 ) from error
+
+        _install_metadata_version_fallback()
 
         try:
             module = importlib.import_module("karospace")
@@ -1454,6 +1767,9 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.gene_list_entry,
             self.gene_list_button,
             self.advanced_toggle_btn,
+            self.selection_mode_check,
+            self.selection_apply_btn,
+            self.selection_sync_btn,
         ]
         for widget in widgets:
             if busy:
@@ -1463,6 +1779,9 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.additional_colors_editor.set_enabled(not busy)
         self.groupby_editor.set_enabled(not busy)
         self.manual_genes_editor.set_enabled(not busy)
+        self.selection_additional_picker.set_enabled(not busy)
+        self.selection_groupby_picker.set_enabled(not busy)
+        self.selection_genes_picker.set_enabled(not busy)
 
         if busy:
             self.progress.start(12)
