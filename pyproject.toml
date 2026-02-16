@@ -24,8 +24,12 @@ dependencies = [
 dev = [
   "pytest>=8.0"
 ]
+build = [
+  "pyinstaller>=6.0"
+]
 
 [project.scripts]
+KaroSpaceBuilder = "karospace_export.app:main"
 karospace-export = "karospace_export.cli:main"
 karospace-export-app = "karospace_export.app:main"
 karospace-builder = "karospace_export.app:main"

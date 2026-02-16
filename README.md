@@ -1,35 +1,72 @@
-# karospace-export
+# KaroSpaceBuilder
+
+![KaroSpaceBuilder logo](assets/logo_KSB.png)
 
 Export an AnnData `.h5ad` into a fully static KaroSpace-compatible viewer bundle.
 
-The export works without any backend server and can be opened from static hosting (Cloudflare Pages/R2) or locally.
+The end product is static HTML viewer output (`index.html`).
+No backend service is generated or required.
+
+## Installation
+
+```bash
+git clone https://github.com/christoffermattssonlangseth/KaroSpaceBuilder
+cd karospace-builder
+python -m pip install -e .
+```
+
+If your Python does not include Tkinter (`_tkinter` error), create a GUI-ready environment first:
+
+```bash
+conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
+conda activate ks-gui
+python -m pip install -e .
+```
+
+## Desktop Distribution (Recommended for Non-technical Users)
+
+End users do not need Python or terminal access.
+
+1. Go to the GitHub Releases page.
+2. Download the file for your OS:
+   - `KaroSpaceBuilder-macos.zip`
+   - `KaroSpaceBuilder-windows.zip`
+3. Unzip and open `KaroSpaceBuilder`.
+4. Export your dataset; the output is `index.html`.
+
+## Build Desktop Releases (Maintainers)
+
+This repository includes automated packaging with PyInstaller:
+
+- Workflow: `.github/workflows/desktop-release.yml`
+- Trigger:
+  - `workflow_dispatch` (manual)
+  - `release.published` (auto-attach binaries to the release)
+
+Local build command:
+
+```bash
+python -m pip install -e .[build]
+python scripts/build_desktop.py
+```
+
+Build output:
+
+- macOS: `dist/KaroSpaceBuilder.app`
+- Windows: `dist/KaroSpaceBuilder/KaroSpaceBuilder.exe`
 
 ## What You Get
 
-Output directory structure:
+Default output (single-file mode):
 
 ```text
-export_dir/ 
+export_dir/
   index.html
-  manifest.json
-  preview.png                  # optional
-  assets/
-    obs_000.csv.gz
-    obs_records_000.json.gz
-    var_000.csv.gz
-    coords_000.json.gz
-    image.png                  # optional
-    expression/
-      gene_00000_part_000.bin.gz
-      gene_00001_part_000.bin.gz
-      ...
 ```
 
-Key files:
+That `index.html` is the final viewer artifact.
 
-- `index.html`: minimal canvas-based viewer.
-- `manifest.json`: schema + asset inventory.
-- `assets/`: metadata, coordinates, optional image, and exported gene expression chunks.
+If you explicitly want split files, use CLI flag `--multi-file` to also keep `manifest.json` and `assets/`.
 
 ## Quick Start (GUI App)
 
@@ -45,21 +82,34 @@ conda activate ks-gui
 ### 2) Install this project
 
 ```bash
-cd /Users/christoffer/work/karolinska/development/karospace-builder
-pip install -e .
+python -m pip install -e .
 ```
 
 ### 3) Launch app
 
 ```bash
-karospace-export-app
+KaroSpaceBuilder
 ```
 
 If the command is not found, run:
 
 ```bash
+karospace-builder
+```
+
+or:
+
+```bash
+karospace-export-app
+```
+
+or:
+
+```bash
 python -m karospace_export.app
 ```
+
+After export finishes, the builder writes `index.html` in your output folder.
 
 GUI features:
 
@@ -107,6 +157,7 @@ karospace-export \
 - `--serve` optional preview server.
 - `--port` optional server port (default `8000`).
 - `--no-preview` disable `preview.png`.
+- `--multi-file` keep `manifest.json` + `assets/` files instead of embedding everything into `index.html`.
 
 ## Input Assumptions
 
@@ -116,9 +167,9 @@ Expected in `.h5ad`:
 - Coordinates from `adata.obsm["spatial"]` or `obs` columns `centroid_x` and `centroid_y`.
 - Optional tissue image from `adata.uns["spatial"]` or `--image PATH`.
 
-## Export Format
+## Export Format (Multi-file Mode)
 
-`manifest.json` includes:
+When you use `--multi-file`, `manifest.json` includes:
 
 - `dataset_name`
 - `n_cells`
@@ -133,6 +184,7 @@ Expected in `.h5ad`:
 - optional `preview_path`
 
 Expression is stored as per-gene `float32` vectors in chunked binary files (`per_gene_float32_v1`) so the browser can lazy-load one gene at a time.
+In default single-file mode, these files are embedded into `index.html`.
 
 ## Viewer Behavior
 
@@ -144,7 +196,7 @@ Expression is stored as per-gene `float32` vectors in chunked binary files (`per
 - Category filter.
 - Point size and opacity controls.
 
-On strict `file://` browser policies, the viewer can prompt for folder access and read assets via File API.
+In default single-file mode, no folder prompt is needed because data is embedded in the HTML.
 
 ## Python API
 
@@ -167,7 +219,7 @@ manifest = export_h5ad(
 Generate a tiny synthetic `.h5ad`:
 
 ```bash
-python /Users/christoffer/work/karolinska/development/karospace-builder/examples/generate_synthetic_h5ad.py
+python examples/generate_synthetic_h5ad.py
 ```
 
 ## Troubleshooting
@@ -179,19 +231,31 @@ Your Python build does not include Tkinter. Use a dedicated Conda environment wi
 ```bash
 conda create -n ks-gui -c conda-forge python=3.12 pip tk python.app anndata numpy pandas scipy pillow
 conda activate ks-gui
-pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
-karospace-export-app
+python -m pip install -e .
+KaroSpaceBuilder
 ```
 
-### `karospace-export-app` not found
+### `KaroSpaceBuilder` command not found
 
 Reinstall in the active environment:
 
 ```bash
-pip install -e /Users/christoffer/work/karolinska/development/karospace-builder
+python -m pip install -e .
 ```
 
 Then run either:
+
+```bash
+KaroSpaceBuilder
+```
+
+or:
+
+```bash
+karospace-builder
+```
+
+or:
 
 ```bash
 karospace-export-app

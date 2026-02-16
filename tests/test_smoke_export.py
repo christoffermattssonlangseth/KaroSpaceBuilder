@@ -56,15 +56,44 @@ def test_smoke_export(tmp_path):
     assert manifest.n_genes_exported == 5
 
     assert (outdir / "index.html").exists()
+    assert not (outdir / "manifest.json").exists()
+    assert not (outdir / "assets").exists()
+
+    manifest_dict = manifest.to_dict()
+    assert manifest_dict["schema_version"] == "1.0.0"
+    assert manifest_dict["expression"]["format"] == "per_gene_float32_v1"
+
+    html = (outdir / "index.html").read_text(encoding="utf-8")
+    assert "EMBEDDED_FILES" in html
+    assert "manifest.json" in html
+    assert "KaroSpace Viewer" in html
+
+
+def test_smoke_export_multi_file(tmp_path):
+    h5ad_path = tmp_path / "toy.h5ad"
+    outdir = tmp_path / "export_multi"
+
+    _make_test_adata().write_h5ad(h5ad_path)
+
+    config = ExportConfig(
+        h5ad_path=h5ad_path,
+        outdir=outdir,
+        annotation_columns=["cell_type", "leiden"],
+        genes_mode="hvgs:5",
+        gzip=False,
+        max_asset_mb=2,
+        single_html=False,
+    )
+
+    manifest = export_h5ad(config)
+    assert manifest.n_cells == 80
+    assert manifest.n_genes_exported == 5
+
+    assert (outdir / "index.html").exists()
     assert (outdir / "manifest.json").exists()
 
     manifest_json = json.loads((outdir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest_json["schema_version"] == "1.0.0"
     assert manifest_json["expression"]["format"] == "per_gene_float32_v1"
-
     for asset in manifest_json["asset_files"]:
         assert (outdir / asset["path"]).exists(), asset["path"]
-
-    html = (outdir / "index.html").read_text(encoding="utf-8")
-    assert "manifest.json" in html
-    assert "assets" in html

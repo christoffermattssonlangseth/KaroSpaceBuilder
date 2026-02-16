@@ -71,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable preview.png generation",
     )
+    parser.add_argument(
+        "--multi-file",
+        action="store_true",
+        help="Keep manifest/assets files instead of embedding everything into a single index.html",
+    )
     return parser
 
 
@@ -108,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         gzip=args.gzip,
         max_asset_mb=args.max_asset_mb,
         preview=not args.no_preview,
+        single_html=not args.multi_file,
     )
 
     manifest = export_h5ad(config)
@@ -116,7 +122,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Export complete: {outdir}")
     print(f"Cells: {manifest.n_cells}")
     print(f"Genes exported: {manifest.n_genes_exported}")
-    print(f"Manifest: {outdir / 'manifest.json'}")
+    if args.multi_file:
+        print(f"Manifest: {outdir / 'manifest.json'}")
+    else:
+        print(f"Viewer HTML: {outdir / 'index.html'}")
 
     if args.serve:
         _serve_directory(outdir, port=args.port)

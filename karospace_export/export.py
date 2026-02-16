@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import json
 import shutil
 
 import anndata as ad
@@ -35,6 +37,7 @@ class ExportConfig:
     max_asset_mb: float = 16.0
     dataset_name: str | None = None
     preview: bool = True
+    single_html: bool = True
 
 
 def _max_asset_bytes(max_asset_mb: float) -> int:
@@ -1041,6 +1044,110 @@ def _build_viewer_html() -> str:
 """
 
 
+def _build_embedded_fetch_bootstrap(encoded_files_json: str) -> str:
+    return (
+        "  <script>\n"
+        "    (() => {\n"
+        f"      const EMBEDDED_FILES = {encoded_files_json};\n"
+        "      const decodedCache = new Map();\n"
+        "      const nativeFetch = window.fetch.bind(window);\n"
+        "\n"
+        "      const normalizePath = (raw) => {\n"
+        "        if (!raw) return \"\";\n"
+        "        const value = String(raw);\n"
+        "        const noHash = value.split(\"#\", 1)[0];\n"
+        "        const noQuery = noHash.split(\"?\", 1)[0];\n"
+        "        const clean = noQuery.replace(/^\\.\\//, \"\").replace(/^\\//, \"\");\n"
+        "        if (EMBEDDED_FILES[clean]) return clean;\n"
+        "        const assetIdx = clean.lastIndexOf(\"assets/\");\n"
+        "        if (assetIdx >= 0) {\n"
+        "          const assetPath = clean.slice(assetIdx);\n"
+        "          if (EMBEDDED_FILES[assetPath]) return assetPath;\n"
+        "        }\n"
+        "        const manifestIdx = clean.lastIndexOf(\"manifest.json\");\n"
+        "        if (manifestIdx >= 0 && EMBEDDED_FILES[\"manifest.json\"]) return \"manifest.json\";\n"
+        "        const previewIdx = clean.lastIndexOf(\"preview.png\");\n"
+        "        if (previewIdx >= 0 && EMBEDDED_FILES[\"preview.png\"]) return \"preview.png\";\n"
+        "        return clean;\n"
+        "      };\n"
+        "\n"
+        "      const decodeBase64 = (b64) => {\n"
+        "        const binary = atob(b64);\n"
+        "        const bytes = new Uint8Array(binary.length);\n"
+        "        for (let i = 0; i < binary.length; i += 1) {\n"
+        "          bytes[i] = binary.charCodeAt(i);\n"
+        "        }\n"
+        "        return bytes;\n"
+        "      };\n"
+        "\n"
+        "      const readEmbeddedBytes = (path) => {\n"
+        "        if (decodedCache.has(path)) {\n"
+        "          return decodedCache.get(path);\n"
+        "        }\n"
+        "        const payload = EMBEDDED_FILES[path];\n"
+        "        if (!payload) {\n"
+        "          return null;\n"
+        "        }\n"
+        "        const bytes = decodeBase64(payload);\n"
+        "        decodedCache.set(path, bytes);\n"
+        "        return bytes;\n"
+        "      };\n"
+        "\n"
+        "      window.fetch = async (input, init) => {\n"
+        "        const rawPath = typeof input === \"string\" ? input : (input && input.url ? input.url : \"\");\n"
+        "        const path = normalizePath(rawPath);\n"
+        "        const bytes = readEmbeddedBytes(path);\n"
+        "        if (bytes) {\n"
+        "          return new Response(bytes, { status: 200 });\n"
+        "        }\n"
+        "        return nativeFetch(input, init);\n"
+        "      };\n"
+        "    })();\n"
+        "  </script>\n"
+    )
+
+
+def _embed_export_into_single_html(outdir: Path, manifest: Manifest) -> None:
+    index_path = outdir / "index.html"
+    manifest_path = outdir / "manifest.json"
+    if not index_path.exists() or not manifest_path.exists():
+        raise ValueError("Expected index.html and manifest.json before single-HTML packaging.")
+
+    embedded_paths: set[str] = {"manifest.json"}
+    embedded_paths.update(asset.path for asset in manifest.asset_files)
+    if manifest.preview_path:
+        embedded_paths.add(manifest.preview_path)
+    if manifest.image and manifest.image.path:
+        embedded_paths.add(manifest.image.path)
+
+    encoded_files: dict[str, str] = {}
+    for rel_path in sorted(embedded_paths):
+        abs_path = outdir / rel_path
+        if not abs_path.exists() or not abs_path.is_file():
+            raise ValueError(f"Cannot embed missing asset: {abs_path}")
+        encoded_files[rel_path] = base64.b64encode(abs_path.read_bytes()).decode("ascii")
+
+    html = index_path.read_text(encoding="utf-8")
+    marker = "  <script>\n    const MANIFEST_PATH = \"manifest.json\";"
+    bootstrap = _build_embedded_fetch_bootstrap(json.dumps(encoded_files, separators=(",", ":")))
+    if marker in html:
+        html = html.replace(marker, f"{bootstrap}\n{marker}", 1)
+    else:
+        html = html.replace("</body>", f"{bootstrap}\n</body>")
+    index_path.write_text(html, encoding="utf-8")
+
+    for rel_path in sorted(embedded_paths):
+        if rel_path == "index.html":
+            continue
+        abs_path = outdir / rel_path
+        if abs_path.is_file():
+            abs_path.unlink()
+
+    assets_dir = outdir / "assets"
+    if assets_dir.exists():
+        shutil.rmtree(assets_dir)
+
+
 def export_h5ad(config: ExportConfig) -> Manifest:
     h5ad_path = Path(config.h5ad_path)
     outdir = Path(config.outdir)
@@ -1172,6 +1279,8 @@ def export_h5ad(config: ExportConfig) -> Manifest:
         )
 
         write_manifest(outdir / "manifest.json", manifest)
+        if config.single_html:
+            _embed_export_into_single_html(outdir, manifest)
 
         return manifest
     finally:
