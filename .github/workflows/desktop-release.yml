@@ -2,6 +2,9 @@ name: Build Desktop Releases
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
   release:
     types: [published]
 
@@ -60,7 +63,7 @@ jobs:
           path: release/*.zip
 
       - name: Attach binaries to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.zip
