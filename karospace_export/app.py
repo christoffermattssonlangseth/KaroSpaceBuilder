@@ -368,6 +368,10 @@ class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 class ExportApp(tk.Tk if tk is not None else object):
+    _NEIGHBOR_MATRIX_BUDGET_BYTES = 512 * 1024 * 1024
+    _MARKER_GROUPBY_MAX_UNIQUE = 2048
+    _INTERACTION_GROUPBY_MAX_UNIQUE = 512
+
     def __init__(self) -> None:
         super().__init__()
         self.title("KaroSpaceBuilder")
@@ -1892,6 +1896,128 @@ class ExportApp(tk.Tk if tk is not None else object):
             return temp_h5ad, "spatial", temp_h5ad
         raise ValueError(f"Unsupported coordinates mode: {mode}")
 
+    @staticmethod
+    def _format_bytes(num_bytes: int) -> str:
+        if num_bytes < 1024:
+            return f"{num_bytes} B"
+        size = float(num_bytes)
+        for unit in ("KiB", "MiB", "GiB", "TiB"):
+            size /= 1024.0
+            if size < 1024.0 or unit == "TiB":
+                return f"{size:.1f} {unit}"
+        return f"{num_bytes} B"
+
+    @staticmethod
+    def _dedupe_names(values: list[str] | None) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in values or []:
+            name = str(raw).strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+        return out
+
+    def _sanitize_analytics_groupbys(
+        self,
+        dataset,
+        *,
+        marker_genes_groupby: list[str] | None,
+        neighbor_stats_groupby: list[str] | None,
+        interaction_markers_groupby: list[str] | None,
+        neighbor_stats_permutations: int | None,
+    ) -> tuple[list[str] | None, list[str], list[str] | None, list[str]]:
+        warnings: list[str] = []
+        marker = self._dedupe_names(marker_genes_groupby)
+        neighbor = self._dedupe_names(neighbor_stats_groupby)
+        interaction = self._dedupe_names(interaction_markers_groupby)
+
+        adata = getattr(dataset, "adata", None)
+        obs = getattr(adata, "obs", None)
+        if obs is None:
+            if neighbor_stats_groupby is None:
+                warnings.append(
+                    "Neighbor stats source columns could not be inspected; auto-neighbor fallback is disabled for safety."
+                )
+            return marker or None, neighbor, interaction or None, warnings
+
+        obs_cols = {str(c) for c in getattr(obs, "columns", [])}
+        unique_cache: dict[str, int | None] = {}
+
+        def unique_count(column: str) -> int | None:
+            if column in unique_cache:
+                return unique_cache[column]
+            try:
+                count = int(obs[column].nunique(dropna=True))
+            except Exception:
+                count = None
+            unique_cache[column] = count
+            return count
+
+        def drop_missing(columns: list[str], label: str) -> list[str]:
+            kept: list[str] = []
+            for column in columns:
+                if column not in obs_cols:
+                    warnings.append(f"Skipping {label} '{column}': not found in adata.obs.")
+                    continue
+                kept.append(column)
+            return kept
+
+        marker = drop_missing(marker, "marker groupby")
+        neighbor = drop_missing(neighbor, "neighbor groupby")
+        interaction = drop_missing(interaction, "interaction groupby")
+
+        marker_kept: list[str] = []
+        for column in marker:
+            count = unique_count(column)
+            if count is not None and count < 2:
+                warnings.append(f"Skipping marker groupby '{column}': only {count} unique value.")
+                continue
+            if count is not None and count > self._MARKER_GROUPBY_MAX_UNIQUE:
+                warnings.append(
+                    f"Skipping marker groupby '{column}': {count:,} unique values exceeds "
+                    f"{self._MARKER_GROUPBY_MAX_UNIQUE:,}."
+                )
+                continue
+            marker_kept.append(column)
+
+        interaction_kept: list[str] = []
+        for column in interaction:
+            count = unique_count(column)
+            if count is not None and count < 2:
+                warnings.append(f"Skipping interaction groupby '{column}': only {count} unique value.")
+                continue
+            if count is not None and count > self._INTERACTION_GROUPBY_MAX_UNIQUE:
+                warnings.append(
+                    f"Skipping interaction groupby '{column}': {count:,} unique values exceeds "
+                    f"{self._INTERACTION_GROUPBY_MAX_UNIQUE:,}."
+                )
+                continue
+            interaction_kept.append(column)
+
+        permutation_factor = 3 if int(neighbor_stats_permutations or 0) > 0 else 1
+        neighbor_kept: list[str] = []
+        for column in neighbor:
+            count = unique_count(column)
+            if count is not None and count < 2:
+                warnings.append(f"Skipping neighbor groupby '{column}': only {count} unique value.")
+                continue
+            if count is not None:
+                dense_bytes = 8 * count * count * permutation_factor
+                if dense_bytes > self._NEIGHBOR_MATRIX_BUDGET_BYTES:
+                    warnings.append(
+                        f"Skipping neighbor groupby '{column}': {count:,} unique values would require ~"
+                        f"{self._format_bytes(dense_bytes)} dense memory."
+                    )
+                    continue
+            neighbor_kept.append(column)
+
+        if neighbor_stats_groupby is None:
+            warnings.append("Neighbor stats auto-fallback disabled in builder; add explicit groupby columns if needed.")
+
+        return marker_kept or None, neighbor_kept, interaction_kept or None, warnings
+
     def _set_busy(self, busy: bool) -> None:
         widgets = [
             self.export_btn,
@@ -1955,6 +2081,18 @@ class ExportApp(tk.Tk if tk is not None else object):
                 groupby=config.section_groupby,
                 spatial_key=spatial_key,
             )
+            marker_groupby, neighbor_groupby, interaction_groupby, guard_warnings = self._sanitize_analytics_groupbys(
+                dataset,
+                marker_genes_groupby=config.marker_genes_groupby,
+                neighbor_stats_groupby=config.neighbor_stats_groupby,
+                interaction_markers_groupby=(
+                    config.interaction_markers_groupby if config.interaction_markers_enabled else None
+                ),
+                neighbor_stats_permutations=config.neighbor_stats_permutations,
+            )
+            for warning in guard_warnings:
+                self._queue.put(("log", warning))
+
             output_html_path = Path(
                 export_to_html(
                     dataset,
@@ -1970,14 +2108,12 @@ class ExportApp(tk.Tk if tk is not None else object):
                     genes=config.genes,
                     use_hvgs=config.use_hvgs,
                     hvg_limit=config.hvg_limit,
-                    marker_genes_groupby=config.marker_genes_groupby,
+                    marker_genes_groupby=marker_groupby,
                     marker_genes_top_n=config.marker_genes_top_n,
-                    neighbor_stats_groupby=config.neighbor_stats_groupby,
-                    neighbor_stats_permutations=config.neighbor_stats_permutations,
+                    neighbor_stats_groupby=neighbor_groupby,
+                    neighbor_stats_permutations=(config.neighbor_stats_permutations if neighbor_groupby else 0),
                     neighbor_stats_seed=config.neighbor_stats_seed,
-                    interaction_markers_groupby=(
-                        config.interaction_markers_groupby if config.interaction_markers_enabled else None
-                    ),
+                    interaction_markers_groupby=interaction_groupby if config.interaction_markers_enabled else None,
                     interaction_markers_top_targets=config.interaction_markers_top_targets,
                     interaction_markers_top_genes=config.interaction_markers_top_genes,
                     interaction_markers_min_cells=config.interaction_markers_min_cells,
