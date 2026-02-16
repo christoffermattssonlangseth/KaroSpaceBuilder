@@ -29,10 +29,10 @@ def _pyinstaller_args(onefile: bool) -> list[str]:
 
     # AnnData/scientific stacks often need broader collection to avoid missing
     # runtime modules in frozen builds.
-    for module in ("anndata", "numpy", "pandas", "scipy", "h5py", "PIL"):
+    for module in ("karospace", "scanpy", "anndata", "numpy", "pandas", "scipy", "h5py", "PIL"):
         args.extend(["--collect-submodules", module])
 
-    for module in ("anndata", "pandas", "scipy", "PIL"):
+    for module in ("karospace", "scanpy", "anndata", "pandas", "scipy", "PIL"):
         args.extend(["--collect-data", module])
 
     if LOGO.exists():

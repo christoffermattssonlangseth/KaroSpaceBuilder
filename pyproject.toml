@@ -13,6 +13,7 @@ authors = [
 ]
 license = { text = "MIT" }
 dependencies = [
+  "karospace @ git+https://github.com/christoffermattssonlangseth/KaroSpace.git",
   "anndata>=0.10",
   "numpy>=1.24",
   "pandas>=2.0",
