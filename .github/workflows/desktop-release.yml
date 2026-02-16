@@ -26,7 +26,7 @@ jobs:
             target: macos-intel
             artifact: KaroSpaceBuilder-macos-intel
             zip_name: KaroSpaceBuilder-macos-intel.zip
-            python_version: "3.11"
+            python_version: "3.10"
           - os: windows-latest
             target: windows
             artifact: KaroSpaceBuilder-windows
@@ -44,15 +44,10 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install build dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          if [ "${{ matrix.target }}" = "macos-intel" ]; then
-            python -m pip install "scanpy<1.12"
-            python -m pip install "karospace @ git+https://github.com/christoffermattssonlangseth/KaroSpace.git"
-            python -m pip install -e . --no-deps
-          else
-            python -m pip install -e .
-          fi
+          python -m pip install -e .
           python -m pip install pyinstaller
 
       - name: Build app bundle
