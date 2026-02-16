@@ -15,9 +15,6 @@ import threading
 import traceback
 import webbrowser
 
-import anndata as ad
-import numpy as np
-
 from .utils import parse_genes_mode, resolve_gene_names
 
 try:
@@ -33,6 +30,18 @@ else:
     TK_IMPORT_ERROR = None
 
 _TTK_FRAME_BASE = ttk.Frame if ttk is not None else object
+
+
+def _get_anndata():
+    import anndata as ad
+
+    return ad
+
+
+def _get_numpy():
+    import numpy as np
+
+    return np
 
 
 class SearchableListEditor(_TTK_FRAME_BASE):
@@ -370,6 +379,9 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._server: _ThreadingHTTPServer | None = None
         self._server_thread: threading.Thread | None = None
         self._last_outdir: Path | None = None
+        self._inspected_h5ad_path: Path | None = None
+        self._inspected_var_name_set: set[str] | None = None
+        self._inspected_coords_mode: str | None = None
 
         self._build_style()
         self._build_variables()
@@ -1121,6 +1133,12 @@ class ExportApp(tk.Tk if tk is not None else object):
                 merged.append(value)
         return merged
 
+    def _matches_inspected_h5ad(self, h5ad_path: Path) -> bool:
+        inspected = self._inspected_h5ad_path
+        if inspected is None:
+            return False
+        return inspected == h5ad_path.expanduser().resolve()
+
     def _apply_preset(self, name: str, *, log: bool = True) -> None:
         preset = str(name or "").strip().lower()
 
@@ -1293,7 +1311,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             messagebox.showerror("Missing input", "Pick an input .h5ad first.")
             return
 
-        path = Path(path_text).expanduser()
+        path = Path(path_text).expanduser().resolve()
         if not path.exists():
             messagebox.showerror("Missing file", f"Input file not found:\n{path}")
             return
@@ -1301,15 +1319,26 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._log(f"Inspecting {path}")
         adata = None
         try:
+            ad_mod = _get_anndata()
             try:
-                adata = ad.read_h5ad(path, backed="r")
+                adata = ad_mod.read_h5ad(path, backed="r")
             except Exception:
-                adata = ad.read_h5ad(path)
+                adata = ad_mod.read_h5ad(path)
 
             obs_cols = [str(c) for c in adata.obs.columns]
-            var_names = [str(g) for g in adata.var_names]
             obs_col_set = set(obs_cols)
-            var_name_set = set(var_names)
+            total_var_count = int(adata.n_vars)
+            max_gene_choices = 120000
+            var_name_set: set[str] | None = None
+            if total_var_count > max_gene_choices:
+                var_names = [str(g) for g in adata.var_names[:max_gene_choices]]
+                self._log(
+                    f"Large gene table detected ({total_var_count}). "
+                    f"Loaded first {max_gene_choices} genes into pickers for responsiveness."
+                )
+            else:
+                var_names = [str(g) for g in adata.var_names]
+                var_name_set = set(var_names)
 
             self.additional_colors_editor.set_choices(obs_cols)
             self.groupby_editor.set_choices(obs_cols)
@@ -1329,7 +1358,10 @@ class ExportApp(tk.Tk if tk is not None else object):
                     self.section_groupby_var.set("sample_id")
                 elif obs_cols:
                     self.section_groupby_var.set(obs_cols[0])
-            if self.initial_color_var.get().strip() not in set(obs_cols).union(var_name_set):
+            initial_color = self.initial_color_var.get().strip()
+            initial_in_obs = initial_color in obs_col_set
+            initial_in_var = True if var_name_set is None else initial_color in var_name_set
+            if not initial_in_obs and not initial_in_var:
                 if "leiden" in obs_col_set:
                     self.initial_color_var.set("leiden")
                 elif obs_cols:
@@ -1356,9 +1388,15 @@ class ExportApp(tk.Tk if tk is not None else object):
                     existing_groupby = [obs_cols[0]]
             self.groupby_editor.set_items(existing_groupby)
 
-            existing_genes = [name for name in self.manual_genes_editor.get_items() if name in var_name_set]
+            if var_name_set is None:
+                existing_genes = self.manual_genes_editor.get_items()
+            else:
+                existing_genes = [name for name in self.manual_genes_editor.get_items() if name in var_name_set]
             if not existing_genes:
-                existing_genes = [g for g in ["Mki67", "Cd4", "Cd8a", "Gfap"] if g in var_name_set]
+                if var_name_set is None:
+                    existing_genes = [g for g in ["Mki67", "Cd4", "Cd8a", "Gfap"] if g in var_names]
+                else:
+                    existing_genes = [g for g in ["Mki67", "Cd4", "Cd8a", "Gfap"] if g in var_name_set]
                 if not existing_genes:
                     existing_genes = var_names[: min(10, len(var_names))]
             self.manual_genes_editor.set_items(existing_genes)
@@ -1373,10 +1411,17 @@ class ExportApp(tk.Tk if tk is not None else object):
             has_centroid = {"centroid_x", "centroid_y"}.issubset(set(obs_cols))
             if has_spatial:
                 self.coords_var.set("obsm:spatial")
+                inspected_coords_mode = "obsm:spatial"
             elif has_centroid:
                 self.coords_var.set("obs:centroid_x_y")
+                inspected_coords_mode = "obs:centroid_x_y"
             else:
                 self.coords_var.set("auto")
+                inspected_coords_mode = None
+
+            self._inspected_h5ad_path = path
+            self._inspected_var_name_set = var_name_set
+            self._inspected_coords_mode = inspected_coords_mode
 
             self._log(
                 f"obs columns: {len(obs_cols)} | cells: {adata.n_obs} | genes: {adata.n_vars} | "
@@ -1443,12 +1488,16 @@ class ExportApp(tk.Tk if tk is not None else object):
         return value
 
     def _load_var_names(self, h5ad_path: Path) -> set[str]:
+        if self._matches_inspected_h5ad(h5ad_path) and self._inspected_var_name_set is not None:
+            return set(self._inspected_var_name_set)
+
+        ad_mod = _get_anndata()
         adata = None
         try:
             try:
-                adata = ad.read_h5ad(h5ad_path, backed="r")
+                adata = ad_mod.read_h5ad(h5ad_path, backed="r")
             except Exception:
-                adata = ad.read_h5ad(h5ad_path)
+                adata = ad_mod.read_h5ad(h5ad_path)
             return {str(v) for v in adata.var_names}
         finally:
             if adata is not None and getattr(adata, "isbacked", False):
@@ -1457,14 +1506,16 @@ class ExportApp(tk.Tk if tk is not None else object):
                     file_obj.close()
 
     def _compute_top_mean_genes(self, h5ad_path: Path, count: int) -> list[str]:
+        ad_mod = _get_anndata()
+        np_mod = _get_numpy()
         adata = None
         try:
             try:
-                adata = ad.read_h5ad(h5ad_path, backed="r")
+                adata = ad_mod.read_h5ad(h5ad_path, backed="r")
             except Exception:
-                adata = ad.read_h5ad(h5ad_path)
+                adata = ad_mod.read_h5ad(h5ad_path)
             mode = parse_genes_mode(f"top_mean:{count}")
-            obs_idx = np.arange(adata.n_obs)
+            obs_idx = np_mod.arange(adata.n_obs)
             return resolve_gene_names(adata, mode, obs_indices=obs_idx)
         finally:
             if adata is not None and getattr(adata, "isbacked", False):
@@ -1748,12 +1799,13 @@ class ExportApp(tk.Tk if tk is not None else object):
 
     @staticmethod
     def _detect_coords_mode(h5ad_path: Path) -> str:
+        ad_mod = _get_anndata()
         adata = None
         try:
             try:
-                adata = ad.read_h5ad(h5ad_path, backed="r")
+                adata = ad_mod.read_h5ad(h5ad_path, backed="r")
             except Exception:
-                adata = ad.read_h5ad(h5ad_path)
+                adata = ad_mod.read_h5ad(h5ad_path)
             if "spatial" in adata.obsm:
                 return "obsm:spatial"
             obs_cols = set(str(c) for c in adata.obs.columns)
@@ -1770,10 +1822,12 @@ class ExportApp(tk.Tk if tk is not None else object):
 
     @staticmethod
     def _build_centroid_spatial_h5ad(h5ad_path: Path) -> Path:
-        adata = ad.read_h5ad(h5ad_path)
+        ad_mod = _get_anndata()
+        np_mod = _get_numpy()
+        adata = ad_mod.read_h5ad(h5ad_path)
         if "centroid_x" not in adata.obs.columns or "centroid_y" not in adata.obs.columns:
             raise ValueError("coords=obs:centroid_x_y requires obs columns centroid_x and centroid_y.")
-        coords = adata.obs[["centroid_x", "centroid_y"]].to_numpy(dtype=np.float32)
+        coords = adata.obs[["centroid_x", "centroid_y"]].to_numpy(dtype=np_mod.float32)
         adata.obsm["spatial"] = coords
         with tempfile.NamedTemporaryFile(suffix=".h5ad", prefix="karospace_builder_coords_", delete=False) as handle:
             temp_path = Path(handle.name)
@@ -1781,7 +1835,11 @@ class ExportApp(tk.Tk if tk is not None else object):
         return temp_path
 
     def _resolve_export_input(self, config: BuilderConfig) -> tuple[Path, str, Path | None]:
-        mode = config.coords_mode or self._detect_coords_mode(config.h5ad_path)
+        mode = config.coords_mode
+        if mode is None and self._matches_inspected_h5ad(config.h5ad_path) and self._inspected_coords_mode:
+            mode = self._inspected_coords_mode
+        if mode is None:
+            mode = self._detect_coords_mode(config.h5ad_path)
         if mode == "obsm:spatial":
             return config.h5ad_path, "spatial", None
         if mode == "obs:centroid_x_y":
