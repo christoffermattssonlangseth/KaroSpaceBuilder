@@ -90,6 +90,11 @@ Coordinates modes:
 
 Prebuilt app bundles can be distributed so users do not need Python/terminal.
 
+Download the correct binary for each machine:
+- Apple Silicon (M1/M2/M3/M4): `KaroSpaceBuilder-macos-arm64.zip`
+- Intel Mac: `KaroSpaceBuilder-macos-intel.zip`
+- Windows: `KaroSpaceBuilder-windows.zip`
+
 Build locally:
 
 ```bash

@@ -18,11 +18,17 @@ jobs:
       matrix:
         include:
           - os: macos-14
-            target: macos
-            artifact: KaroSpaceBuilder-macos
+            target: macos-arm64
+            artifact: KaroSpaceBuilder-macos-arm64
+            zip_name: KaroSpaceBuilder-macos-arm64.zip
+          - os: macos-13
+            target: macos-intel
+            artifact: KaroSpaceBuilder-macos-intel
+            zip_name: KaroSpaceBuilder-macos-intel.zip
           - os: windows-latest
             target: windows
             artifact: KaroSpaceBuilder-windows
+            zip_name: KaroSpaceBuilder-windows.zip
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -44,17 +50,17 @@ jobs:
         run: python scripts/build_desktop.py
 
       - name: Package macOS app
-        if: matrix.target == 'macos'
+        if: startsWith(matrix.target, 'macos')
         run: |
           mkdir -p release
-          ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app release/KaroSpaceBuilder-macos.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app release/${{ matrix.zip_name }}
 
       - name: Package Windows app
         if: matrix.target == 'windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path dist/KaroSpaceBuilder -DestinationPath release/KaroSpaceBuilder-windows.zip -Force
+          Compress-Archive -Path dist/KaroSpaceBuilder -DestinationPath release/${{ matrix.zip_name }} -Force
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
