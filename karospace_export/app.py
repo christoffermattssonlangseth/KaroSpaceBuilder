@@ -16,8 +16,9 @@ import traceback
 import webbrowser
 
 import anndata as ad
+import numpy as np
 
-from .export import ExportConfig, export_h5ad
+from .utils import parse_genes_mode, resolve_gene_names
 
 try:
     import tkinter as tk
@@ -156,7 +157,39 @@ class SearchableListEditor(_TTK_FRAME_BASE):
 class AppResult:
     outdir: Path
     n_cells: int
-    n_genes_exported: int
+    n_sections: int
+    output_html: Path
+
+
+@dataclass(slots=True)
+class BuilderConfig:
+    h5ad_path: Path
+    outdir: Path
+    coords_mode: str | None
+    section_groupby: str
+    initial_color: str
+    title: str
+    theme: str
+    outline_by: str | None
+    min_panel_size: int
+    spot_size: float | str | None
+    downsample: int | None
+    additional_colors: list[str] | None
+    genes: list[str] | None
+    use_hvgs: bool
+    hvg_limit: int
+    marker_genes_groupby: list[str] | None
+    genes_mode: str
+    marker_genes_top_n: int
+    neighbor_stats_groupby: list[str] | None
+    neighbor_stats_permutations: int | None
+    neighbor_stats_seed: int
+    interaction_markers_enabled: bool
+    interaction_markers_groupby: list[str] | None
+    interaction_markers_top_targets: int
+    interaction_markers_top_genes: int
+    interaction_markers_min_cells: int
+    interaction_markers_min_neighbors: int
 
 
 class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -175,7 +208,6 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._server: _ThreadingHTTPServer | None = None
         self._server_thread: threading.Thread | None = None
         self._last_outdir: Path | None = None
-        self._temp_gene_lists: list[Path] = []
 
         self._build_style()
         self._build_variables()
@@ -229,17 +261,29 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.h5ad_var = tk.StringVar()
         self.outdir_var = tk.StringVar()
         self.coords_var = tk.StringVar(value="auto")
+        self.section_groupby_var = tk.StringVar(value="sample_id")
+        self.initial_color_var = tk.StringVar(value="leiden")
+        self.title_var = tk.StringVar(value="KaroSpace")
+        self.theme_var = tk.StringVar(value="light")
+        self.outline_by_var = tk.StringVar(value="condition")
 
         self.genes_mode_var = tk.StringVar(value="hvgs")
         self.genes_count_var = tk.StringVar(value="500")
         self.gene_list_path_var = tk.StringVar()
         self.advanced_open_var = tk.BooleanVar(value=False)
+        self.min_panel_size_var = tk.StringVar(value="120")
+        self.spot_size_var = tk.StringVar(value="auto")
+        self.marker_genes_top_n_var = tk.StringVar(value="50")
+        self.neighbor_permutations_var = tk.StringVar(value="25")
+        self.neighbor_stats_seed_var = tk.StringVar(value="42")
+        self.neighbor_auto_var = tk.BooleanVar(value=True)
+        self.interaction_markers_enabled_var = tk.BooleanVar(value=False)
+        self.interaction_markers_top_targets_var = tk.StringVar(value="6")
+        self.interaction_markers_top_genes_var = tk.StringVar(value="15")
+        self.interaction_markers_min_cells_var = tk.StringVar(value="30")
+        self.interaction_markers_min_neighbors_var = tk.StringVar(value="1")
 
-        self.image_var = tk.StringVar()
         self.downsample_var = tk.StringVar()
-        self.gzip_var = tk.BooleanVar(value=True)
-        self.max_asset_mb_var = tk.StringVar(value="16")
-        self.preview_var = tk.BooleanVar(value=True)
 
         self.serve_var = tk.BooleanVar(value=False)
         self.port_var = tk.StringVar(value="8000")
@@ -326,19 +370,54 @@ class ExportApp(tk.Tk if tk is not None else object):
             row,
             "Coordinates",
             widget=self._coords_dropdown(basic_tab),
-            hint="auto | obsm:spatial | obs:centroid_x_y. Auto prefers obsm['spatial'] when available.",
+            hint="auto | obsm:spatial | obs:centroid_x_y. obs centroid mode is converted to temporary obsm['spatial'] before KaroSpace export.",
         )
-        row = self._path_field(basic_tab, row, "Optional tissue image", self.image_var, choose_file=True, optional=True)
-
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Section groupby",
+            widget=self._groupby_dropdown(basic_tab),
+            hint="obs column used to split sections (same as load_spatial_data(groupby=...)).",
+        )
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Initial color",
+            widget=self._color_dropdown(basic_tab),
+            hint="Initial viewer color (obs column or gene).",
+        )
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Theme",
+            widget=self._theme_dropdown(basic_tab),
+            hint="KaroSpace viewer theme.",
+        )
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Outline by",
+            widget=self._outline_dropdown(basic_tab),
+            hint="Optional metadata column for panel outlines.",
+        )
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Viewer title",
+            widget=self._entry(basic_tab, self.title_var),
+            hint="Title shown in the exported HTML.",
+        )
         downsample_container = ttk.Frame(basic_tab, style="Card.TFrame")
         ttk.Entry(downsample_container, textvariable=self.downsample_var, width=12).pack(side="left")
-        ttk.Label(downsample_container, text="cells (blank = all)", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        ttk.Label(downsample_container, text="cells per section (blank = all)", style="Body.TLabel").pack(
+            side="left", padx=(8, 0)
+        )
         self._option_row(
             basic_tab,
             row,
             "Downsample",
             widget=downsample_container,
-            hint="Integer number of cells sampled with a fixed seed for reproducible lightweight exports.",
+            hint="Maps to export_to_html(downsample=...).",
         )
 
         colors_tab.columnconfigure(0, weight=1)
@@ -346,15 +425,15 @@ class ExportApp(tk.Tk if tk is not None else object):
             colors_tab,
             label="additional_colors (obs columns)",
             height=6,
-            help_text="These become available categorical colors in the viewer. Use Inspect to load obs columns.",
+            help_text="These become color options in KaroSpace. Use Inspect to load obs columns.",
         )
         self.additional_colors_editor.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
         self.groupby_editor = SearchableListEditor(
             colors_tab,
-            label="groupby list (obs columns)",
+            label="groupby lists (marker/neighbor/interaction)",
             height=6,
-            help_text="Extra groupby fields. In this exporter they are merged into annotation columns.",
+            help_text="Used for marker_genes_groupby and optionally neighbor/interaction groupby.",
         )
         self.groupby_editor.grid(row=1, column=0, sticky="ew", pady=(0, 12))
 
@@ -365,7 +444,10 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._genes_mode_row(genes_card).grid(row=1, column=0, sticky="ew")
         ttk.Label(
             genes_card,
-            text="genes mode: hvgs/top_mean require count, list_file reads one gene per line, manual_list writes from the list below.",
+            text=(
+                "hvgs:N maps to use_hvgs=True/hvg_limit=N. top_mean/list_file/manual_list map to explicit genes list "
+                "with use_hvgs=False."
+            ),
             style="Subheader.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=(4, 8))
         self.manual_genes_editor = SearchableListEditor(
@@ -388,7 +470,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.advanced_toggle_btn.pack(anchor="w")
         ttk.Label(
             adv_header,
-            text="Contains chunking, compression, preview generation, and local server settings.",
+            text="Pancreas-style analytics and rendering parameters from KaroSpace export_to_html.",
             style="Subheader.TLabel",
         ).pack(anchor="w", pady=(6, 0))
 
@@ -396,32 +478,100 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.advanced_content.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         self.advanced_content.columnconfigure(1, weight=1)
 
-        max_asset_container = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Entry(max_asset_container, textvariable=self.max_asset_mb_var, width=12).pack(side="left")
-        ttk.Label(max_asset_container, text="MB per asset file", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        min_panel_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Entry(min_panel_row, textvariable=self.min_panel_size_var, width=10).pack(side="left")
+        ttk.Label(min_panel_row, text="px", style="Body.TLabel").pack(side="left", padx=(8, 0))
         self._option_row(
             self.advanced_content,
             0,
-            "Asset split limit",
-            widget=max_asset_container,
-            hint="Float > 0. Larger values reduce file count, smaller values lower single-file size.",
+            "Min panel size",
+            widget=min_panel_row,
+            hint="Minimum section panel width in exported KaroSpace HTML.",
         )
 
-        toggles = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Checkbutton(toggles, text="Gzip assets", variable=self.gzip_var).pack(side="left")
-        ttk.Checkbutton(toggles, text="Write preview.png", variable=self.preview_var).pack(side="left", padx=(14, 0))
-        ttk.Checkbutton(toggles, text="Serve after export", variable=self.serve_var).pack(side="left", padx=(14, 0))
-        self._option_row(self.advanced_content, 2, "Options", widget=toggles)
-
-        serve_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Entry(serve_row, textvariable=self.port_var, width=10).pack(side="left")
-        ttk.Label(serve_row, text="port", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        spot_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Combobox(spot_row, textvariable=self.spot_size_var, values=["auto", "adaptive", "density"], width=12).pack(
+            side="left"
+        )
+        ttk.Label(spot_row, text="or numeric value", style="Body.TLabel").pack(side="left", padx=(8, 0))
         self._option_row(
             self.advanced_content,
-            3,
-            "Serve port",
+            2,
+            "Spot size",
+            widget=spot_row,
+            hint="Use auto/adaptive/density or a positive number.",
+        )
+
+        marker_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Entry(marker_row, textvariable=self.marker_genes_top_n_var, width=10).pack(side="left")
+        ttk.Label(marker_row, text="top genes per group", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        self._option_row(
+            self.advanced_content,
+            4,
+            "Marker genes top N",
+            widget=marker_row,
+            hint="Maps to marker_genes_top_n.",
+        )
+
+        neighbor_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Checkbutton(neighbor_row, text="Auto neighbor groupby = [initial color]", variable=self.neighbor_auto_var).pack(
+            side="left"
+        )
+        ttk.Label(neighbor_row, text="Permutations", style="Body.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Entry(neighbor_row, textvariable=self.neighbor_permutations_var, width=8).pack(side="left")
+        ttk.Label(neighbor_row, text="Seed", style="Body.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Entry(neighbor_row, textvariable=self.neighbor_stats_seed_var, width=8).pack(side="left")
+        self._option_row(
+            self.advanced_content,
+            6,
+            "Neighbor stats",
+            widget=neighbor_row,
+            hint="Permutations accepts integer or 'auto'.",
+        )
+
+        interaction_row_1 = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Checkbutton(
+            interaction_row_1,
+            text="Enable interaction markers (uses groupby list)",
+            variable=self.interaction_markers_enabled_var,
+        ).pack(side="left")
+        self._option_row(self.advanced_content, 8, "Interaction markers", widget=interaction_row_1)
+
+        interaction_row_2 = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Label(interaction_row_2, text="Top targets", style="Body.TLabel").pack(side="left")
+        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_top_targets_var, width=8).pack(
+            side="left", padx=(4, 10)
+        )
+        ttk.Label(interaction_row_2, text="Top genes", style="Body.TLabel").pack(side="left")
+        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_top_genes_var, width=8).pack(
+            side="left", padx=(4, 10)
+        )
+        ttk.Label(interaction_row_2, text="Min cells", style="Body.TLabel").pack(side="left")
+        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_min_cells_var, width=8).pack(
+            side="left", padx=(4, 10)
+        )
+        ttk.Label(interaction_row_2, text="Min neighbors", style="Body.TLabel").pack(side="left")
+        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_min_neighbors_var, width=8).pack(
+            side="left", padx=(4, 0)
+        )
+        self._option_row(
+            self.advanced_content,
+            9,
+            "Interaction limits",
+            widget=interaction_row_2,
+            hint="Maps to interaction_markers_top_targets/top_genes/min_cells/min_neighbors.",
+        )
+
+        serve_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        ttk.Checkbutton(serve_row, text="Serve after export", variable=self.serve_var).pack(side="left")
+        ttk.Label(serve_row, text="Port", style="Body.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Entry(serve_row, textvariable=self.port_var, width=10).pack(side="left")
+        self._option_row(
+            self.advanced_content,
+            11,
+            "Preview server",
             widget=serve_row,
-            hint="Used only when Serve after export is enabled.",
+            hint="Optional local server to open the generated index.html.",
         )
         self._set_advanced_visible(False)
 
@@ -447,25 +597,29 @@ class ExportApp(tk.Tk if tk is not None else object):
             "1.0",
             "Basic tab\n"
             "- Input .h5ad: absolute path to your AnnData file.\n"
-            "- Output directory: folder where index.html + assets are written.\n"
-            "- Coordinates: auto tries obsm['spatial'] then obs centroid_x/centroid_y.\n"
-            "- Optional tissue image: overrides any image auto-detected from adata.uns['spatial'].\n"
-            "- Downsample: integer number of cells (blank keeps all).\n\n"
+            "- Output directory: folder where index.html is written.\n"
+            "- Coordinates: auto/obsm/obs-centroid modes are converted to KaroSpace spatial input.\n"
+            "- Section groupby: section split column used by load_spatial_data.\n"
+            "- Initial color/theme/outline/title map directly to export_to_html.\n"
+            "- Downsample: integer cells per section (blank keeps all).\n\n"
             "Colors & Genes tab\n"
             "- additional_colors: obs columns offered as categorical coloring fields.\n"
-            "- groupby list: additional obs columns merged into export annotations.\n"
+            "- groupby lists: columns used for marker/neighbor/interaction analytics.\n"
             "- genes mode:\n"
-            "  hvgs / top_mean -> provide count\n"
+            "  hvgs -> use_hvgs=True with hvg_limit from count\n"
+            "  top_mean -> compute top_mean genes list from adata\n"
             "  list_file -> choose a text file with one gene name per line\n"
-            "  manual_list -> build list from var_names picker\n\n"
+            "  manual_list -> build list from var_names picker\n"
+            "  (non-hvgs modes set use_hvgs=False)\n\n"
             "Advanced tab\n"
-            "- Asset split limit controls max per-file payload size.\n"
-            "- Gzip toggles compression for text and binary assets.\n"
+            "- Min panel size, spot size, marker top N.\n"
+            "- Neighbor stats permutations/seed and auto groupby mode.\n"
+            "- Interaction markers limits and enable/disable toggle.\n"
             "- Serve after export starts a local preview server.\n\n"
             "Presets\n"
             "- Default: balanced defaults.\n"
             "- Pancreas: prefilled annotation and gene lists from pancreas workflow.\n"
-            "- Lightweight: fewer genes, downsample on, smaller assets.\n\n"
+            "- Lightweight: fewer genes and faster analytics.\n\n"
             "Tip: click Inspect H5AD to load searchable dropdown choices from adata.obs and adata.var_names."
         )
         help_text.configure(state="disabled")
@@ -518,8 +672,10 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.log_text.configure(state="disabled")
 
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
+        self.neighbor_auto_var.trace_add("write", lambda *_: self._update_neighbor_groupby_state())
         self._apply_preset("default", log=False)
         self._update_genes_mode_visibility()
+        self._update_neighbor_groupby_state()
 
     def _path_field(
         self,
@@ -572,6 +728,22 @@ class ExportApp(tk.Tk if tk is not None else object):
             values=["auto", "obsm:spatial", "obs:centroid_x_y"],
             state="readonly",
         )
+        return combo
+
+    def _groupby_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
+        self.groupby_combo = ttk.Combobox(parent, textvariable=self.section_groupby_var, state="normal")
+        return self.groupby_combo
+
+    def _color_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
+        self.color_combo = ttk.Combobox(parent, textvariable=self.initial_color_var, state="normal")
+        return self.color_combo
+
+    def _outline_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
+        self.outline_combo = ttk.Combobox(parent, textvariable=self.outline_by_var, state="normal")
+        return self.outline_combo
+
+    def _theme_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
+        combo = ttk.Combobox(parent, textvariable=self.theme_var, values=["light", "dark"], state="readonly")
         return combo
 
     def _genes_mode_row(self, parent: ttk.Frame) -> ttk.Frame:
@@ -630,6 +802,11 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.genes_count_entry.pack(side="left", padx=(10, 0))
             self.genes_count_label.pack(side="left", padx=(8, 0))
 
+    def _update_neighbor_groupby_state(self) -> None:
+        # Groupby list is shared by marker/neighbor/interaction settings.
+        # Keep it editable even when neighbor auto mode is enabled.
+        self.groupby_editor.set_enabled(True)
+
     def _toggle_advanced(self) -> None:
         self._set_advanced_visible(not bool(self.advanced_open_var.get()))
 
@@ -683,32 +860,6 @@ class ExportApp(tk.Tk if tk is not None else object):
                 merged.append(value)
         return merged
 
-    def _write_manual_gene_list(self, genes: list[str]) -> Path:
-        deduped = self._merge_unique(genes)
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=".txt",
-            prefix="karospace_manual_genes_",
-            delete=False,
-        ) as handle:
-            handle.write("\n".join(deduped))
-            handle.write("\n")
-            path = Path(handle.name)
-        self._temp_gene_lists.append(path)
-        return path
-
-    def _cleanup_temp_gene_lists(self) -> None:
-        if not self._temp_gene_lists:
-            return
-        remaining: list[Path] = []
-        for path in self._temp_gene_lists:
-            try:
-                path.unlink(missing_ok=True)
-            except Exception:
-                remaining.append(path)
-        self._temp_gene_lists = remaining
-
     def _apply_preset(self, name: str, *, log: bool = True) -> None:
         preset = str(name or "").strip().lower()
 
@@ -718,15 +869,27 @@ class ExportApp(tk.Tk if tk is not None else object):
         if not self.outdir_var.get().strip():
             self.outdir_var.set(str((Path.cwd() / "karospace_export").resolve()))
         self.coords_var.set("auto")
-        self.image_var.set("")
-        self.gzip_var.set(True)
-        self.preview_var.set(True)
         self.serve_var.set(False)
         self.port_var.set("8000")
-        self.max_asset_mb_var.set("16")
         self.downsample_var.set("")
-        self.genes_count_var.set("500")
+        self.genes_count_var.set("100")
         self.gene_list_path_var.set("")
+        self.section_groupby_var.set("sample_id")
+        self.initial_color_var.set("leiden")
+        self.title_var.set("KaroSpace")
+        self.theme_var.set("light")
+        self.outline_by_var.set("condition")
+        self.min_panel_size_var.set("120")
+        self.spot_size_var.set("auto")
+        self.marker_genes_top_n_var.set("50")
+        self.neighbor_auto_var.set(True)
+        self.neighbor_permutations_var.set("auto")
+        self.neighbor_stats_seed_var.set("0")
+        self.interaction_markers_enabled_var.set(False)
+        self.interaction_markers_top_targets_var.set("8")
+        self.interaction_markers_top_genes_var.set("20")
+        self.interaction_markers_min_cells_var.set("30")
+        self.interaction_markers_min_neighbors_var.set("1")
 
         if preset == "pancreas":
             self.additional_colors_editor.set_items(
@@ -744,8 +907,27 @@ class ExportApp(tk.Tk if tk is not None else object):
                     "condition",
                 ]
             )
-            self.groupby_editor.set_items(["sample_id", "condition"])
-            self.genes_mode_var.set("manual_list")
+            self.groupby_editor.set_items(
+                [
+                    "leiden_0.5",
+                    "leiden_1",
+                    "leiden_1.5",
+                    "leiden_2",
+                    "gmm_mana_5",
+                    "gmm_mana_8",
+                    "gmm_mana_10",
+                    "gmm_mana_12",
+                    "gmm_mana_15",
+                    "gmm_mana_20",
+                ]
+            )
+            self.section_groupby_var.set("sample_id")
+            self.initial_color_var.set("leiden_2")
+            self.outline_by_var.set("condition")
+            self.min_panel_size_var.set("120")
+            self.downsample_var.set("1000000")
+            self.genes_mode_var.set("hvgs")
+            self.genes_count_var.set("100")
             self.manual_genes_editor.set_items(
                 [
                     "Arg1",
@@ -767,30 +949,57 @@ class ExportApp(tk.Tk if tk is not None else object):
                     "Serpina3n",
                 ]
             )
-            self.max_asset_mb_var.set("24")
+            self.neighbor_auto_var.set(False)
+            self.neighbor_permutations_var.set("25")
+            self.neighbor_stats_seed_var.set("42")
+            self.marker_genes_top_n_var.set("50")
+            self.interaction_markers_enabled_var.set(False)
+            self.interaction_markers_top_targets_var.set("6")
+            self.interaction_markers_top_genes_var.set("15")
+            self.interaction_markers_min_cells_var.set("30")
+            self.interaction_markers_min_neighbors_var.set("1")
             self.status_var.set("Preset loaded: Pancreas")
             label = "Pancreas"
         elif preset == "lightweight":
-            self.additional_colors_editor.set_items(["cell_type", "leiden"])
-            self.groupby_editor.set_items(["sample_id"])
+            self.section_groupby_var.set("sample_id")
+            self.initial_color_var.set("leiden")
+            self.outline_by_var.set("")
+            self.min_panel_size_var.set("140")
+            self.spot_size_var.set("auto")
+            self.additional_colors_editor.set_items(["leiden_1"])
+            self.groupby_editor.set_items([])
             self.genes_mode_var.set("top_mean")
-            self.genes_count_var.set("200")
+            self.genes_count_var.set("20")
             self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Mki67"])
             self.downsample_var.set("50000")
-            self.max_asset_mb_var.set("8")
-            self.preview_var.set(False)
+            self.marker_genes_top_n_var.set("20")
+            self.neighbor_auto_var.set(True)
+            self.neighbor_permutations_var.set("0")
+            self.interaction_markers_enabled_var.set(False)
+            self.interaction_markers_top_targets_var.set("4")
+            self.interaction_markers_top_genes_var.set("10")
+            self.interaction_markers_min_cells_var.set("20")
             self.status_var.set("Preset loaded: Lightweight")
             label = "Lightweight"
         else:
-            self.additional_colors_editor.set_items(["cell_type", "leiden"])
-            self.groupby_editor.set_items(["sample_id", "condition"])
+            self.section_groupby_var.set("sample_id")
+            self.initial_color_var.set("leiden")
+            self.outline_by_var.set("condition")
+            self.min_panel_size_var.set("150")
+            self.additional_colors_editor.set_items(["leiden_1", "leiden_2", "gmm_mana_10"])
+            self.groupby_editor.set_items([])
             self.genes_mode_var.set("hvgs")
-            self.genes_count_var.set("500")
+            self.genes_count_var.set("20")
             self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Gfap", "Mki67"])
+            self.marker_genes_top_n_var.set("30")
+            self.neighbor_auto_var.set(True)
+            self.neighbor_permutations_var.set("auto")
+            self.interaction_markers_enabled_var.set(False)
             self.status_var.set("Preset loaded: Default")
             label = "Default"
 
         self._update_genes_mode_visibility()
+        self._update_neighbor_groupby_state()
         if log:
             self._log(f"Applied preset: {label}")
 
@@ -843,6 +1052,30 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.additional_colors_editor.set_choices(obs_cols)
             self.groupby_editor.set_choices(obs_cols)
             self.manual_genes_editor.set_choices(var_names)
+            if hasattr(self, "groupby_combo"):
+                self.groupby_combo.configure(values=obs_cols)
+            if hasattr(self, "color_combo"):
+                self.color_combo.configure(values=obs_cols + var_names[:200])
+            if hasattr(self, "outline_combo"):
+                self.outline_combo.configure(values=[""] + obs_cols)
+
+            if self.section_groupby_var.get().strip() not in obs_col_set:
+                if "sample_id" in obs_col_set:
+                    self.section_groupby_var.set("sample_id")
+                elif obs_cols:
+                    self.section_groupby_var.set(obs_cols[0])
+            if self.initial_color_var.get().strip() not in set(obs_cols).union(var_name_set):
+                if "leiden" in obs_col_set:
+                    self.initial_color_var.set("leiden")
+                elif obs_cols:
+                    self.initial_color_var.set(obs_cols[0])
+                elif var_names:
+                    self.initial_color_var.set(var_names[0])
+            if self.outline_by_var.get().strip() and self.outline_by_var.get().strip() not in obs_col_set:
+                if "condition" in obs_col_set:
+                    self.outline_by_var.set("condition")
+                else:
+                    self.outline_by_var.set("")
 
             existing_additional = [name for name in self.additional_colors_editor.get_items() if name in obs_col_set]
             if not existing_additional:
@@ -893,7 +1126,124 @@ class ExportApp(tk.Tk if tk is not None else object):
                 if file_obj is not None:
                     file_obj.close()
 
-    def _parse_config(self) -> ExportConfig:
+    @staticmethod
+    def _parse_positive_int(label: str, raw: str) -> int:
+        text = str(raw).strip()
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be an integer.") from exc
+        if value <= 0:
+            raise ValueError(f"{label} must be > 0.")
+        return value
+
+    @staticmethod
+    def _parse_non_negative_int(label: str, raw: str) -> int:
+        text = str(raw).strip()
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be an integer.") from exc
+        if value < 0:
+            raise ValueError(f"{label} must be >= 0.")
+        return value
+
+    @staticmethod
+    def _parse_spot_size(raw: str) -> float | str | None:
+        text = str(raw).strip()
+        if not text:
+            return "auto"
+        if text.lower() in {"auto", "adaptive", "density"}:
+            return "auto"
+        try:
+            value = float(text)
+        except ValueError as exc:
+            raise ValueError("Spot size must be auto/adaptive/density or a positive number.") from exc
+        if value <= 0:
+            raise ValueError("Spot size must be > 0.")
+        return value
+
+    @staticmethod
+    def _parse_neighbor_permutations(raw: str) -> int | None:
+        text = str(raw).strip().lower()
+        if not text or text == "auto":
+            return None
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise ValueError("Neighbor permutations must be an integer or 'auto'.") from exc
+        if value < 0:
+            raise ValueError("Neighbor permutations must be >= 0.")
+        return value
+
+    def _load_var_names(self, h5ad_path: Path) -> set[str]:
+        adata = None
+        try:
+            try:
+                adata = ad.read_h5ad(h5ad_path, backed="r")
+            except Exception:
+                adata = ad.read_h5ad(h5ad_path)
+            return {str(v) for v in adata.var_names}
+        finally:
+            if adata is not None and getattr(adata, "isbacked", False):
+                file_obj = getattr(adata, "file", None)
+                if file_obj is not None:
+                    file_obj.close()
+
+    def _compute_top_mean_genes(self, h5ad_path: Path, count: int) -> list[str]:
+        adata = None
+        try:
+            try:
+                adata = ad.read_h5ad(h5ad_path, backed="r")
+            except Exception:
+                adata = ad.read_h5ad(h5ad_path)
+            mode = parse_genes_mode(f"top_mean:{count}")
+            obs_idx = np.arange(adata.n_obs)
+            return resolve_gene_names(adata, mode, obs_indices=obs_idx)
+        finally:
+            if adata is not None and getattr(adata, "isbacked", False):
+                file_obj = getattr(adata, "file", None)
+                if file_obj is not None:
+                    file_obj.close()
+
+    def _resolve_gene_settings(self, h5ad_path: Path, mode: str) -> tuple[list[str] | None, bool, int]:
+        normalized = mode.strip().lower()
+        if normalized == "hvgs":
+            hvg_limit = self._parse_positive_int("HVG limit", self.genes_count_var.get())
+            return None, True, hvg_limit
+
+        use_hvgs = False
+        hvg_limit = self._parse_positive_int("HVG limit", self.genes_count_var.get() or "20")
+        if normalized == "top_mean":
+            count = self._parse_positive_int("Top-mean genes", self.genes_count_var.get())
+            genes = self._compute_top_mean_genes(h5ad_path, count)
+            return genes, use_hvgs, hvg_limit
+
+        if normalized == "list_file":
+            list_path_text = self.gene_list_path_var.get().strip()
+            if not list_path_text:
+                raise ValueError("Choose a gene list file for list_file mode.")
+            list_path = Path(list_path_text).expanduser()
+            if not list_path.exists():
+                raise ValueError(f"Gene list file not found: {list_path}")
+            genes = [line.strip() for line in list_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        elif normalized == "manual_list":
+            genes = self.manual_genes_editor.get_items()
+        else:
+            raise ValueError("Genes mode must be hvgs, top_mean, list_file, or manual_list.")
+
+        genes = self._merge_unique(genes)
+        if not genes:
+            raise ValueError("Add at least one gene for list/manual genes mode.")
+
+        var_names = self._load_var_names(h5ad_path)
+        missing = [gene for gene in genes if gene not in var_names]
+        if missing:
+            preview = ", ".join(missing[:10])
+            raise ValueError(f"{len(missing)} genes are missing in var_names: {preview}")
+        return genes, use_hvgs, hvg_limit
+
+    def _parse_config(self) -> BuilderConfig:
         h5ad_text = self.h5ad_var.get().strip()
         outdir_text = self.outdir_var.get().strip()
 
@@ -902,78 +1252,167 @@ class ExportApp(tk.Tk if tk is not None else object):
         if not outdir_text:
             raise ValueError("Output directory is required.")
 
-        h5ad_path = Path(h5ad_text).expanduser()
-        outdir = Path(outdir_text).expanduser()
+        h5ad_path = Path(h5ad_text).expanduser().resolve()
+        outdir = Path(outdir_text).expanduser().resolve()
         if not h5ad_path.exists():
             raise ValueError(f"Input .h5ad not found: {h5ad_path}")
 
-        coords = None if self.coords_var.get() == "auto" else self.coords_var.get()
-        annos = self._merge_unique(self.additional_colors_editor.get_items(), self.groupby_editor.get_items())
-        if not annos:
-            annos = None
+        outdir.mkdir(parents=True, exist_ok=True)
 
-        mode = self.genes_mode_var.get().strip().lower()
-        if mode in {"hvgs", "top_mean"}:
-            count_text = self.genes_count_var.get().strip()
-            if not count_text:
-                raise ValueError("Set a gene count for hvgs/top_mean mode.")
-            try:
-                count = int(count_text)
-            except ValueError as exc:
-                raise ValueError("Gene count must be an integer.") from exc
-            if count <= 0:
-                raise ValueError("Gene count must be > 0.")
-            genes_mode = f"{mode}:{count}"
-        elif mode == "list_file":
-            list_path_text = self.gene_list_path_var.get().strip()
-            if not list_path_text:
-                raise ValueError("Choose a gene list file for list_file mode.")
-            list_path = Path(list_path_text).expanduser()
-            if not list_path.exists():
-                raise ValueError(f"Gene list file not found: {list_path}")
-            genes_mode = f"list:{list_path}"
-        elif mode == "manual_list":
-            manual_genes = self.manual_genes_editor.get_items()
-            if not manual_genes:
-                raise ValueError("Add at least one gene in the manual genes list.")
-            list_path = self._write_manual_gene_list(manual_genes)
-            genes_mode = f"list:{list_path}"
-        else:
-            raise ValueError("Genes mode must be hvgs, top_mean, list_file, or manual_list.")
+        coords_raw = self.coords_var.get().strip().lower() or "auto"
+        if coords_raw not in {"auto", "obsm:spatial", "obs:centroid_x_y"}:
+            raise ValueError("Coordinates must be auto, obsm:spatial, or obs:centroid_x_y.")
+        coords_mode = None if coords_raw == "auto" else coords_raw
 
-        image_text = self.image_var.get().strip()
-        image_path = Path(image_text).expanduser() if image_text else None
+        section_groupby = self.section_groupby_var.get().strip()
+        if not section_groupby:
+            raise ValueError("Section groupby is required.")
+        initial_color = self.initial_color_var.get().strip()
+        if not initial_color:
+            raise ValueError("Initial color is required.")
+        theme = self.theme_var.get().strip().lower() or "light"
+        if theme not in {"light", "dark"}:
+            raise ValueError("Theme must be 'light' or 'dark'.")
+        title = self.title_var.get().strip() or "KaroSpace"
+        outline_by = self.outline_by_var.get().strip() or None
+        min_panel_size = self._parse_positive_int("Min panel size", self.min_panel_size_var.get())
+        spot_size = self._parse_spot_size(self.spot_size_var.get())
 
         downsample_text = self.downsample_var.get().strip()
         downsample = None
         if downsample_text:
-            try:
-                downsample = int(downsample_text)
-            except ValueError as exc:
-                raise ValueError("Downsample must be an integer.") from exc
-            if downsample <= 0:
-                raise ValueError("Downsample must be > 0.")
+            downsample = self._parse_positive_int("Downsample", downsample_text)
 
-        max_asset_text = self.max_asset_mb_var.get().strip()
-        try:
-            max_asset_mb = float(max_asset_text)
-        except ValueError as exc:
-            raise ValueError("Asset split limit must be a number.") from exc
-        if max_asset_mb <= 0:
-            raise ValueError("Asset split limit must be > 0.")
+        additional_colors = self._merge_unique(self.additional_colors_editor.get_items())
+        groupby_lists = self._merge_unique(self.groupby_editor.get_items())
 
-        return ExportConfig(
+        mode = self.genes_mode_var.get().strip().lower()
+        genes, use_hvgs, hvg_limit = self._resolve_gene_settings(h5ad_path, mode)
+
+        marker_genes_top_n = self._parse_positive_int("Marker genes top N", self.marker_genes_top_n_var.get())
+        neighbor_permutations = self._parse_neighbor_permutations(self.neighbor_permutations_var.get())
+        neighbor_seed = self._parse_non_negative_int("Neighbor stats seed", self.neighbor_stats_seed_var.get() or "0")
+        marker_genes_groupby = groupby_lists or None
+        if bool(self.neighbor_auto_var.get()):
+            neighbor_stats_groupby = [initial_color]
+        else:
+            neighbor_stats_groupby = groupby_lists or None
+        interaction_enabled = bool(self.interaction_markers_enabled_var.get())
+        interaction_groupby = (groupby_lists or None) if interaction_enabled else None
+        interaction_top_targets = self._parse_positive_int(
+            "Interaction top targets", self.interaction_markers_top_targets_var.get()
+        )
+        interaction_top_genes = self._parse_positive_int(
+            "Interaction top genes", self.interaction_markers_top_genes_var.get()
+        )
+        interaction_min_cells = self._parse_positive_int(
+            "Interaction min cells", self.interaction_markers_min_cells_var.get()
+        )
+        interaction_min_neighbors = self._parse_positive_int(
+            "Interaction min neighbors", self.interaction_markers_min_neighbors_var.get()
+        )
+
+        return BuilderConfig(
             h5ad_path=h5ad_path,
             outdir=outdir,
-            coords=coords,
-            annotation_columns=annos,
-            genes_mode=genes_mode,
-            image_path=image_path,
+            coords_mode=coords_mode,
+            section_groupby=section_groupby,
+            initial_color=initial_color,
+            title=title,
+            theme=theme,
+            outline_by=outline_by,
+            min_panel_size=min_panel_size,
+            spot_size=spot_size,
             downsample=downsample,
-            gzip=bool(self.gzip_var.get()),
-            max_asset_mb=max_asset_mb,
-            preview=bool(self.preview_var.get()),
+            additional_colors=additional_colors or None,
+            genes=genes,
+            use_hvgs=use_hvgs,
+            hvg_limit=hvg_limit,
+            marker_genes_groupby=marker_genes_groupby,
+            genes_mode=mode,
+            marker_genes_top_n=marker_genes_top_n,
+            neighbor_stats_groupby=neighbor_stats_groupby,
+            neighbor_stats_permutations=neighbor_permutations,
+            neighbor_stats_seed=neighbor_seed,
+            interaction_markers_enabled=interaction_enabled,
+            interaction_markers_groupby=interaction_groupby,
+            interaction_markers_top_targets=interaction_top_targets,
+            interaction_markers_top_genes=interaction_top_genes,
+            interaction_markers_min_cells=interaction_min_cells,
+            interaction_markers_min_neighbors=interaction_min_neighbors,
         )
+
+    @staticmethod
+    def _import_karospace_api():
+        import importlib
+
+        try:
+            module = importlib.import_module("karospace")
+            return module.load_spatial_data, module.export_to_html
+        except Exception as exc:
+            candidates = [
+                (Path(__file__).resolve().parents[2] / "spatial-viewer").resolve(),
+                (Path.cwd().parent / "spatial-viewer").resolve(),
+            ]
+            for candidate in candidates:
+                package_dir = candidate / "karospace"
+                if not package_dir.exists():
+                    continue
+                candidate_str = str(candidate)
+                if candidate_str not in sys.path:
+                    sys.path.insert(0, candidate_str)
+                try:
+                    module = importlib.import_module("karospace")
+                    return module.load_spatial_data, module.export_to_html
+                except Exception:
+                    continue
+            raise RuntimeError(
+                "Could not import 'karospace'. Install it in this environment before exporting "
+                "(for example: pip install -e /path/to/spatial-viewer)."
+            ) from exc
+
+    @staticmethod
+    def _detect_coords_mode(h5ad_path: Path) -> str:
+        adata = None
+        try:
+            try:
+                adata = ad.read_h5ad(h5ad_path, backed="r")
+            except Exception:
+                adata = ad.read_h5ad(h5ad_path)
+            if "spatial" in adata.obsm:
+                return "obsm:spatial"
+            obs_cols = set(str(c) for c in adata.obs.columns)
+            if {"centroid_x", "centroid_y"}.issubset(obs_cols):
+                return "obs:centroid_x_y"
+            raise ValueError(
+                "Could not detect coordinates. Add adata.obsm['spatial'] or obs columns centroid_x/centroid_y."
+            )
+        finally:
+            if adata is not None and getattr(adata, "isbacked", False):
+                file_obj = getattr(adata, "file", None)
+                if file_obj is not None:
+                    file_obj.close()
+
+    @staticmethod
+    def _build_centroid_spatial_h5ad(h5ad_path: Path) -> Path:
+        adata = ad.read_h5ad(h5ad_path)
+        if "centroid_x" not in adata.obs.columns or "centroid_y" not in adata.obs.columns:
+            raise ValueError("coords=obs:centroid_x_y requires obs columns centroid_x and centroid_y.")
+        coords = adata.obs[["centroid_x", "centroid_y"]].to_numpy(dtype=np.float32)
+        adata.obsm["spatial"] = coords
+        with tempfile.NamedTemporaryFile(suffix=".h5ad", prefix="karospace_builder_coords_", delete=False) as handle:
+            temp_path = Path(handle.name)
+        adata.write_h5ad(temp_path)
+        return temp_path
+
+    def _resolve_export_input(self, config: BuilderConfig) -> tuple[Path, str, Path | None]:
+        mode = config.coords_mode or self._detect_coords_mode(config.h5ad_path)
+        if mode == "obsm:spatial":
+            return config.h5ad_path, "spatial", None
+        if mode == "obs:centroid_x_y":
+            temp_h5ad = self._build_centroid_spatial_h5ad(config.h5ad_path)
+            return temp_h5ad, "spatial", temp_h5ad
+        raise ValueError(f"Unsupported coordinates mode: {mode}")
 
     def _set_busy(self, busy: bool) -> None:
         widgets = [
@@ -1009,26 +1448,76 @@ class ExportApp(tk.Tk if tk is not None else object):
         try:
             config = self._parse_config()
         except Exception as exc:
-            self._cleanup_temp_gene_lists()
             messagebox.showerror("Invalid options", str(exc))
             return
 
         self._set_busy(True)
         self._log(f"Starting export: {config.h5ad_path} -> {config.outdir}")
-
-        thread = threading.Thread(target=self._run_export, args=(config,), daemon=True)
+        serve_after_export = bool(self.serve_var.get())
+        thread = threading.Thread(target=self._run_export, args=(config, serve_after_export), daemon=True)
         self._export_thread = thread
         thread.start()
 
-    def _run_export(self, config: ExportConfig) -> None:
+    def _run_export(self, config: BuilderConfig, serve_after_export: bool) -> None:
+        temp_h5ad: Path | None = None
         try:
-            manifest = export_h5ad(config)
-            result = AppResult(outdir=config.outdir, n_cells=manifest.n_cells, n_genes_exported=manifest.n_genes_exported)
+            load_spatial_data, export_to_html = self._import_karospace_api()
+            input_path, spatial_key, temp_h5ad = self._resolve_export_input(config)
+            if temp_h5ad is not None:
+                self._queue.put(("log", "Converted obs centroid_x/centroid_y to temporary obsm['spatial']."))
+
+            dataset = load_spatial_data(
+                str(input_path),
+                groupby=config.section_groupby,
+                spatial_key=spatial_key,
+            )
+            output_html_path = Path(
+                export_to_html(
+                    dataset,
+                    output_path=str(config.outdir / "index.html"),
+                    color=config.initial_color,
+                    title=config.title,
+                    min_panel_size=config.min_panel_size,
+                    spot_size=config.spot_size,
+                    downsample=config.downsample,
+                    theme=config.theme,
+                    outline_by=config.outline_by,
+                    additional_colors=config.additional_colors,
+                    genes=config.genes,
+                    use_hvgs=config.use_hvgs,
+                    hvg_limit=config.hvg_limit,
+                    marker_genes_groupby=config.marker_genes_groupby,
+                    marker_genes_top_n=config.marker_genes_top_n,
+                    neighbor_stats_groupby=config.neighbor_stats_groupby,
+                    neighbor_stats_permutations=config.neighbor_stats_permutations,
+                    neighbor_stats_seed=config.neighbor_stats_seed,
+                    interaction_markers_groupby=(
+                        config.interaction_markers_groupby if config.interaction_markers_enabled else None
+                    ),
+                    interaction_markers_top_targets=config.interaction_markers_top_targets,
+                    interaction_markers_top_genes=config.interaction_markers_top_genes,
+                    interaction_markers_min_cells=config.interaction_markers_min_cells,
+                    interaction_markers_min_neighbors=config.interaction_markers_min_neighbors,
+                )
+            ).expanduser()
+
+            result = AppResult(
+                outdir=output_html_path.parent,
+                n_cells=int(dataset.n_cells),
+                n_sections=int(dataset.n_sections),
+                output_html=output_html_path,
+            )
             self._queue.put(("done", result))
-            if self.serve_var.get():
-                self._queue.put(("start_server", config.outdir))
+            if serve_after_export:
+                self._queue.put(("start_server", output_html_path.parent))
         except Exception:
             self._queue.put(("error", traceback.format_exc()))
+        finally:
+            if temp_h5ad is not None:
+                try:
+                    temp_h5ad.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _poll_events(self) -> None:
         while True:
@@ -1039,21 +1528,21 @@ class ExportApp(tk.Tk if tk is not None else object):
 
             if kind == "done":
                 self._set_busy(False)
-                self._cleanup_temp_gene_lists()
                 result = payload
                 assert isinstance(result, AppResult)
                 self._last_outdir = result.outdir
                 self._log(
-                    f"Export complete. cells={result.n_cells}, genes={result.n_genes_exported}, outdir={result.outdir}"
+                    f"Export complete. sections={result.n_sections}, cells={result.n_cells}, html={result.output_html}"
                 )
                 self.status_var.set("Export complete")
             elif kind == "start_server":
                 outdir = payload
                 assert isinstance(outdir, Path)
                 self._start_server(outdir)
+            elif kind == "log":
+                self._log(str(payload))
             elif kind == "error":
                 self._set_busy(False)
-                self._cleanup_temp_gene_lists()
                 details = str(payload)
                 self._log("Export failed. See traceback in popup.")
                 self.status_var.set("Export failed")
@@ -1150,7 +1639,6 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.unbind_all("<MouseWheel>")
         self.unbind_all("<Button-4>")
         self.unbind_all("<Button-5>")
-        self._cleanup_temp_gene_lists()
         self._stop_server()
         self.destroy()
 
