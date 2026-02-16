@@ -21,14 +21,17 @@ jobs:
             target: macos-arm64
             artifact: KaroSpaceBuilder-macos-arm64
             zip_name: KaroSpaceBuilder-macos-arm64.zip
+            python_version: "3.12"
           - os: macos-15-intel
             target: macos-intel
             artifact: KaroSpaceBuilder-macos-intel
             zip_name: KaroSpaceBuilder-macos-intel.zip
+            python_version: "3.11"
           - os: windows-latest
             target: windows
             artifact: KaroSpaceBuilder-windows
             zip_name: KaroSpaceBuilder-windows.zip
+            python_version: "3.12"
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -38,7 +41,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python_version }}
 
       - name: Install build dependencies
         run: |
