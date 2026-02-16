@@ -1701,11 +1701,22 @@ class ExportApp(tk.Tk if tk is not None else object):
             if getattr(original_getsource, "_ksb_scanpy_fallback", False):
                 return
 
+            def _obj_module_name(obj) -> str:
+                module_name = str(getattr(obj, "__module__", "") or "")
+                if module_name:
+                    return module_name
+                if inspect.ismodule(obj):
+                    return str(getattr(obj, "__name__", "") or "")
+                obj_cls = getattr(obj, "__class__", None)
+                if obj_cls is None:
+                    return ""
+                return str(getattr(obj_cls, "__module__", "") or "")
+
             def _ksb_safe_getsource(obj) -> str:
                 try:
                     return original_getsource(obj)
                 except OSError:
-                    module_name = str(getattr(obj, "__module__", "") or "")
+                    module_name = _obj_module_name(obj)
                     if module_name.startswith("scanpy"):
                         return ""
                     raise
