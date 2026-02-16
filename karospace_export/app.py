@@ -1687,11 +1687,31 @@ class ExportApp(tk.Tk if tk is not None else object):
     def _import_karospace_api():
         import importlib
         import importlib.metadata as importlib_metadata
+        import inspect
 
         # scanpy imports numba with cache=True in some code paths; in certain
         # environments this crashes during import. Disable JIT by default for
         # robust GUI startup/export unless the user explicitly overrides it.
         os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+
+        def _install_scanpy_inspect_fallback() -> None:
+            original_getsource = getattr(inspect, "getsource", None)
+            if original_getsource is None:
+                return
+            if getattr(original_getsource, "_ksb_scanpy_fallback", False):
+                return
+
+            def _ksb_safe_getsource(obj) -> str:
+                try:
+                    return original_getsource(obj)
+                except OSError:
+                    module_name = str(getattr(obj, "__module__", "") or "")
+                    if module_name.startswith("scanpy"):
+                        return ""
+                    raise
+
+            setattr(_ksb_safe_getsource, "_ksb_scanpy_fallback", True)
+            inspect.getsource = _ksb_safe_getsource
 
         def _install_metadata_version_fallback() -> None:
             original_version = getattr(importlib_metadata, "version", None)
@@ -1745,6 +1765,14 @@ class ExportApp(tk.Tk if tk is not None else object):
                 current = current.__cause__
             return None
 
+        def _has_scanpy_source_error(error: BaseException) -> bool:
+            current: BaseException | None = error
+            while current is not None:
+                if isinstance(current, OSError) and "could not get source code" in str(current).lower():
+                    return True
+                current = current.__cause__
+            return False
+
         def _raise_dependency_error(error: BaseException) -> None:
             missing = _missing_module_name(error)
             if missing:
@@ -1766,7 +1794,13 @@ class ExportApp(tk.Tk if tk is not None else object):
                     "scanpy/numba failed during import cache initialization. "
                     "Set NUMBA_DISABLE_JIT=1 and restart KaroSpaceBuilder."
                 ) from error
+            if _has_scanpy_source_error(error):
+                raise RuntimeError(
+                    "scanpy import failed while inspecting plotting source code in a frozen app. "
+                    "Rebuild KaroSpaceBuilder with updated packaging, then retry export."
+                ) from error
 
+        _install_scanpy_inspect_fallback()
         _install_metadata_version_fallback()
 
         try:
