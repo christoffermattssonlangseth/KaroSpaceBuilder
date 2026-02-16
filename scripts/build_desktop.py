@@ -29,7 +29,7 @@ def _pyinstaller_args(onefile: bool) -> list[str]:
 
     # scanpy calls inspect.getsource() in some import paths; collect scanpy as
     # source modules so frozen apps can satisfy source introspection.
-    args.extend(["--module-collection-mode", "scanpy=py"])
+    args.extend(["--module-collection-mode", "scanpy:py"])
 
     # AnnData/scientific stacks often need broader collection to avoid missing
     # runtime modules in frozen builds.
