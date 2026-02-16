@@ -35,6 +35,29 @@ def _pyinstaller_args(onefile: bool) -> list[str]:
     for module in ("karospace", "scanpy", "anndata", "pandas", "scipy", "PIL"):
         args.extend(["--collect-data", module])
 
+    # scanpy queries dependency versions via importlib.metadata at runtime.
+    # Include dist-info metadata explicitly so frozen binaries can resolve these.
+    for dist in (
+        "scanpy",
+        "scikit-learn",
+        "anndata",
+        "numpy",
+        "pandas",
+        "scipy",
+        "numba",
+        "llvmlite",
+        "matplotlib",
+        "kiwisolver",
+        "umap-learn",
+        "pynndescent",
+        "statsmodels",
+        "seaborn",
+        "joblib",
+        "threadpoolctl",
+        "packaging",
+    ):
+        args.extend(["--copy-metadata", dist])
+
     if LOGO.exists():
         sep = ";" if os.name == "nt" else ":"
         args.extend(["--add-data", f"{LOGO}{sep}assets"])

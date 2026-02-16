@@ -1346,10 +1346,39 @@ class ExportApp(tk.Tk if tk is not None else object):
     def _import_karospace_api():
         import importlib
 
+        # scanpy imports numba with cache=True in some code paths; in certain
+        # environments this crashes during import. Disable JIT by default for
+        # robust GUI startup/export unless the user explicitly overrides it.
+        os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+
+        def _missing_module_name(error: BaseException) -> str | None:
+            current: BaseException | None = error
+            while current is not None:
+                if isinstance(current, ModuleNotFoundError):
+                    return getattr(current, "name", None)
+                current = current.__cause__
+            return None
+
+        def _raise_dependency_error(error: BaseException) -> None:
+            missing = _missing_module_name(error)
+            if missing:
+                raise RuntimeError(
+                    f"Missing dependency '{missing}' required by KaroSpace. "
+                    "Install dependencies in this environment (for example: "
+                    "pip install scanpy or pip install -e /path/to/spatial-viewer)."
+                ) from error
+            message = str(error)
+            if "cannot cache function" in message and "numba" in message.lower():
+                raise RuntimeError(
+                    "scanpy/numba failed during import cache initialization. "
+                    "Set NUMBA_DISABLE_JIT=1 and restart KaroSpaceBuilder."
+                ) from error
+
         try:
             module = importlib.import_module("karospace")
             return module.load_spatial_data, module.export_to_html
         except Exception as exc:
+            root_exc = exc
             candidates = [
                 (Path(__file__).resolve().parents[2] / "spatial-viewer").resolve(),
                 (Path.cwd().parent / "spatial-viewer").resolve(),
@@ -1364,12 +1393,14 @@ class ExportApp(tk.Tk if tk is not None else object):
                 try:
                     module = importlib.import_module("karospace")
                     return module.load_spatial_data, module.export_to_html
-                except Exception:
+                except Exception as inner_exc:
+                    _raise_dependency_error(inner_exc)
                     continue
+            _raise_dependency_error(root_exc)
             raise RuntimeError(
                 "Could not import 'karospace'. Install it in this environment before exporting "
                 "(for example: pip install -e /path/to/spatial-viewer)."
-            ) from exc
+            ) from root_exc
 
     @staticmethod
     def _detect_coords_mode(h5ad_path: Path) -> str:
