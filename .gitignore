@@ -7,3 +7,7 @@ build/
 dist/
 release/
 *.spec
+
+# Generated export artifacts
+KaroSpace_*.html
+karospace_export/KaroSpace_*.html
