@@ -31,28 +31,48 @@ else:
 
 _TTK_FRAME_BASE = ttk.Frame if ttk is not None else object
 
+_KI_COLORS = {
+    "plum_dark": "#4F0433",
+    "orange": "#FF876F",
+    "light_orange": "#FEEEEB",
+    "light_blue": "#EDF4F4",
+    "plum": "#870052",
+}
+
 _KAROSPACE_LIGHT_PALETTE = {
-    "background": "#f5f5f5",
-    "text": "#1a1a1a",
-    "panel_bg": "#ffffff",
-    "border": "#e0e0e0",
+    "plum_dark": _KI_COLORS["plum_dark"],
+    "orange": _KI_COLORS["orange"],
+    "light_orange": _KI_COLORS["light_orange"],
+    "light_blue": _KI_COLORS["light_blue"],
+    "plum": _KI_COLORS["plum"],
+    "background": _KI_COLORS["light_blue"],
+    "text": _KI_COLORS["plum_dark"],
+    "panel_bg": _KI_COLORS["light_orange"],
+    "border": _KI_COLORS["plum"],
     "input_bg": "#ffffff",
-    "muted": "#666666",
-    "hover_bg": "#f0f0f0",
-    "accent": "#870052",
-    "accent_strong": "#4F0433",
+    "muted": _KI_COLORS["plum"],
+    "hover_bg": _KI_COLORS["orange"],
+    "accent": _KI_COLORS["plum"],
+    "accent_strong": _KI_COLORS["plum_dark"],
+    "on_accent": "#ffffff",
 }
 
 _KAROSPACE_DARK_PALETTE = {
-    "background": "#1a1a1a",
-    "text": "#e0e0e0",
-    "panel_bg": "#2a2a2a",
-    "border": "#404040",
-    "input_bg": "#333333",
-    "muted": "#888888",
-    "hover_bg": "#3a3a3a",
-    "accent": "#FF876F",
-    "accent_strong": "#870052",
+    "plum_dark": _KI_COLORS["plum_dark"],
+    "orange": _KI_COLORS["orange"],
+    "light_orange": _KI_COLORS["light_orange"],
+    "light_blue": _KI_COLORS["light_blue"],
+    "plum": _KI_COLORS["plum"],
+    "background": _KI_COLORS["plum_dark"],
+    "text": _KI_COLORS["light_orange"],
+    "panel_bg": _KI_COLORS["plum"],
+    "border": _KI_COLORS["orange"],
+    "input_bg": _KI_COLORS["plum_dark"],
+    "muted": _KI_COLORS["light_blue"],
+    "hover_bg": _KI_COLORS["plum_dark"],
+    "accent": _KI_COLORS["orange"],
+    "accent_strong": _KI_COLORS["light_orange"],
+    "on_accent": _KI_COLORS["plum_dark"],
 }
 
 
@@ -120,7 +140,7 @@ class SearchableListEditor(_TTK_FRAME_BASE):
             background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
             foreground=_KAROSPACE_LIGHT_PALETTE["text"],
             selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
-            selectforeground="#ffffff",
+            selectforeground=_KAROSPACE_LIGHT_PALETTE["on_accent"],
             relief="solid",
             bd=1,
             highlightthickness=1,
@@ -208,7 +228,7 @@ class SearchableListEditor(_TTK_FRAME_BASE):
             background=palette["input_bg"],
             foreground=palette["text"],
             selectbackground=palette["accent"],
-            selectforeground="#ffffff",
+            selectforeground=palette.get("on_accent", "#ffffff"),
             disabledforeground=palette["muted"],
             highlightbackground=palette["border"],
             highlightcolor=palette["accent"],
@@ -270,7 +290,7 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
             background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
             foreground=_KAROSPACE_LIGHT_PALETTE["text"],
             selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
-            selectforeground="#ffffff",
+            selectforeground=_KAROSPACE_LIGHT_PALETTE["on_accent"],
             relief="solid",
             bd=1,
             highlightthickness=1,
@@ -375,7 +395,7 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
             background=palette["input_bg"],
             foreground=palette["text"],
             selectbackground=palette["accent"],
-            selectforeground="#ffffff",
+            selectforeground=palette.get("on_accent", "#ffffff"),
             disabledforeground=palette["muted"],
             highlightbackground=palette["border"],
             highlightcolor=palette["accent"],
@@ -454,8 +474,8 @@ class ExportApp(tk.Tk if tk is not None else object):
     def _build_style(self) -> None:
         self._style = ttk.Style(self)
         self._style.theme_use("clam")
-        self._app_palette = _palette_for_mode("light")
-        self._apply_app_theme("light")
+        self._app_palette = _palette_for_mode("dark")
+        self._apply_app_theme("dark")
 
     def _apply_app_theme(self, mode: str) -> None:
         palette = _palette_for_mode(mode)
@@ -477,12 +497,12 @@ class ExportApp(tk.Tk if tk is not None else object):
             borderwidth=1,
             relief="solid",
             background=palette["accent"],
-            foreground="#ffffff",
+            foreground=palette.get("on_accent", "#ffffff"),
         )
         style.map(
             "Primary.TButton",
             background=[("disabled", palette["hover_bg"]), ("active", palette["accent_strong"]), ("!disabled", palette["accent"])],
-            foreground=[("disabled", palette["muted"]), ("!disabled", "#ffffff")],
+            foreground=[("disabled", palette["muted"]), ("!disabled", palette.get("on_accent", "#ffffff"))],
         )
 
         style.configure(
@@ -496,7 +516,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         )
         style.map(
             "Secondary.TButton",
-            background=[("active", palette["hover_bg"]), ("!disabled", palette["input_bg"])],
+            background=[("active", palette["light_orange"] if "light_orange" in palette else palette["hover_bg"]), ("!disabled", palette["input_bg"])],
             foreground=[("disabled", palette["muted"]), ("!disabled", palette["text"])],
         )
 
@@ -576,7 +596,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.section_groupby_var = tk.StringVar(value="sample_id")
         self.initial_color_var = tk.StringVar(value="leiden")
         self.title_var = tk.StringVar(value="KaroSpace")
-        self.theme_var = tk.StringVar(value="light")
+        self.theme_var = tk.StringVar(value="dark")
         self.outline_by_var = tk.StringVar(value="condition")
 
         self.genes_mode_var = tk.StringVar(value="hvgs")
@@ -1305,7 +1325,8 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.section_groupby_var.set("sample_id")
         self.initial_color_var.set("leiden")
         self.title_var.set("KaroSpace")
-        self.theme_var.set("light")
+        if not self.theme_var.get().strip():
+            self.theme_var.set("dark")
         self.outline_by_var.set("condition")
         self.min_panel_size_var.set("120")
         self.spot_size_var.set("auto")
@@ -1742,7 +1763,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         initial_color = self.initial_color_var.get().strip()
         if not initial_color:
             raise ValueError("Initial color is required.")
-        theme = self.theme_var.get().strip().lower() or "light"
+        theme = self.theme_var.get().strip().lower() or "dark"
         if theme not in {"light", "dark"}:
             raise ValueError("Theme must be 'light' or 'dark'.")
         title = self.title_var.get().strip() or "KaroSpace"
