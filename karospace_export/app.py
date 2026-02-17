@@ -659,7 +659,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         ttk.Label(controls, text="KaroSpaceBuilder", style="Header.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(
             controls,
-            text="Export AnnData into a static KaroSpace viewer bundle with guided presets and inspected field pickers.",
+            text="Export AnnData into a static KaroSpace viewer bundle with guided inputs and inspected field pickers.",
             style="Subheader.TLabel",
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 18))
 
@@ -668,19 +668,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         ttk.Button(preset_row, text="Default", style="Secondary.TButton", command=lambda: self._apply_preset("default")).pack(
             side="left"
         )
-        ttk.Button(
-            preset_row,
-            text="Pancreas",
-            style="Secondary.TButton",
-            command=lambda: self._apply_preset("pancreas"),
-        ).pack(side="left", padx=(8, 0))
-        ttk.Button(
-            preset_row,
-            text="Lightweight",
-            style="Secondary.TButton",
-            command=lambda: self._apply_preset("lightweight"),
-        ).pack(side="left", padx=(8, 0))
-        ttk.Label(preset_row, text="Preset profiles for fast setup.", style="Subheader.TLabel").pack(side="left", padx=(12, 0))
+        ttk.Label(preset_row, text="Default profile for fast setup.", style="Subheader.TLabel").pack(side="left", padx=(12, 0))
 
         notebook = ttk.Notebook(controls)
         notebook.grid(row=3, column=0, columnspan=3, sticky="nsew")
@@ -868,7 +856,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.advanced_toggle_btn.pack(anchor="w")
         ttk.Label(
             adv_header,
-            text="Pancreas-style analytics and rendering parameters from KaroSpace export_to_html.",
+            text="Analytics and rendering parameters from KaroSpace export_to_html.",
             style="Subheader.TLabel",
         ).pack(anchor="w", pady=(6, 0))
 
@@ -1020,8 +1008,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Serve after export starts a local preview server.\n\n"
             "Presets\n"
             "- Default: balanced defaults.\n"
-            "- Pancreas: prefilled annotation and gene lists from pancreas workflow.\n"
-            "- Lightweight: fewer genes and faster analytics.\n\n"
+            "\n"
             "Tip: click Inspect H5AD to load searchable dropdown choices from adata.obs and adata.var_names."
         )
         self.help_text.configure(state="disabled")
@@ -1309,8 +1296,6 @@ class ExportApp(tk.Tk if tk is not None else object):
         return inspected == h5ad_path.expanduser().resolve()
 
     def _apply_preset(self, name: str, *, log: bool = True) -> None:
-        preset = str(name or "").strip().lower()
-
         # Shared baseline.
         if not self.h5ad_var.get().strip():
             self.h5ad_var.set("/absolute/path/to/input.h5ad")
@@ -1339,113 +1324,21 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.interaction_markers_top_genes_var.set("20")
         self.interaction_markers_min_cells_var.set("30")
         self.interaction_markers_min_neighbors_var.set("1")
-
-        if preset == "pancreas":
-            self.additional_colors_editor.set_items(
-                [
-                    "leiden_0.5",
-                    "leiden_1",
-                    "leiden_1.5",
-                    "leiden_2",
-                    "gmm_mana_5",
-                    "gmm_mana_8",
-                    "gmm_mana_10",
-                    "gmm_mana_12",
-                    "gmm_mana_15",
-                    "gmm_mana_20",
-                    "condition",
-                ]
-            )
-            self.groupby_editor.set_items(
-                [
-                    "leiden_0.5",
-                    "leiden_1",
-                    "leiden_1.5",
-                    "leiden_2",
-                    "gmm_mana_5",
-                    "gmm_mana_8",
-                    "gmm_mana_10",
-                    "gmm_mana_12",
-                    "gmm_mana_15",
-                    "gmm_mana_20",
-                ]
-            )
-            self.section_groupby_var.set("sample_id")
-            self.initial_color_var.set("leiden_2")
-            self.outline_by_var.set("condition")
-            self.min_panel_size_var.set("120")
-            self.downsample_var.set("1000000")
-            self.genes_mode_var.set("hvgs")
-            self.genes_count_var.set("100")
-            self.manual_genes_editor.set_items(
-                [
-                    "Arg1",
-                    "Cd74",
-                    "Cldn11",
-                    "Col1a2",
-                    "Ctss",
-                    "Foxp3",
-                    "Gfap",
-                    "Gpnmb",
-                    "Grn",
-                    "H2-Aa",
-                    "H2-Ab1",
-                    "H2-Eb1",
-                    "Mbp",
-                    "Meg3",
-                    "Mki67",
-                    "Ptgds",
-                    "Serpina3n",
-                ]
-            )
-            self.neighbor_auto_var.set(False)
-            self.neighbor_permutations_var.set("25")
-            self.neighbor_stats_seed_var.set("42")
-            self.marker_genes_top_n_var.set("50")
-            self.interaction_markers_enabled_var.set(False)
-            self.interaction_markers_top_targets_var.set("6")
-            self.interaction_markers_top_genes_var.set("15")
-            self.interaction_markers_min_cells_var.set("30")
-            self.interaction_markers_min_neighbors_var.set("1")
-            self.status_var.set("Preset loaded: Pancreas")
-            label = "Pancreas"
-        elif preset == "lightweight":
-            self.section_groupby_var.set("sample_id")
-            self.initial_color_var.set("leiden")
-            self.outline_by_var.set("")
-            self.min_panel_size_var.set("140")
-            self.spot_size_var.set("auto")
-            self.additional_colors_editor.set_items(["leiden_1"])
-            self.groupby_editor.set_items([])
-            self.genes_mode_var.set("top_mean")
-            self.genes_count_var.set("20")
-            self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Mki67"])
-            self.downsample_var.set("50000")
-            self.marker_genes_top_n_var.set("20")
-            self.neighbor_auto_var.set(True)
-            self.neighbor_permutations_var.set("0")
-            self.interaction_markers_enabled_var.set(False)
-            self.interaction_markers_top_targets_var.set("4")
-            self.interaction_markers_top_genes_var.set("10")
-            self.interaction_markers_min_cells_var.set("20")
-            self.status_var.set("Preset loaded: Lightweight")
-            label = "Lightweight"
-        else:
-            self.section_groupby_var.set("sample_id")
-            self.initial_color_var.set("leiden")
-            self.outline_by_var.set("condition")
-            self.min_panel_size_var.set("150")
-            self.additional_colors_editor.set_items(["leiden_1", "leiden_2", "gmm_mana_10"])
-            self.groupby_editor.set_items([])
-            self.genes_mode_var.set("hvgs")
-            self.genes_count_var.set("20")
-            self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Gfap", "Mki67"])
-            self.marker_genes_top_n_var.set("30")
-            self.neighbor_auto_var.set(True)
-            self.neighbor_permutations_var.set("auto")
-            self.interaction_markers_enabled_var.set(False)
-            self.status_var.set("Preset loaded: Default")
-            label = "Default"
+        self.section_groupby_var.set("sample_id")
+        self.initial_color_var.set("leiden")
+        self.outline_by_var.set("condition")
+        self.min_panel_size_var.set("150")
+        self.additional_colors_editor.set_items(["leiden_1", "leiden_2", "gmm_mana_10"])
+        self.groupby_editor.set_items([])
+        self.genes_mode_var.set("hvgs")
+        self.genes_count_var.set("20")
+        self.manual_genes_editor.set_items(["Cd4", "Cd8a", "Gfap", "Mki67"])
+        self.marker_genes_top_n_var.set("30")
+        self.neighbor_auto_var.set(True)
+        self.neighbor_permutations_var.set("auto")
+        self.interaction_markers_enabled_var.set(False)
+        self.status_var.set("Preset loaded: Default")
+        label = "Default"
 
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()

@@ -83,7 +83,7 @@ python -m karospace_export.app
    - Initial color
    - Additional colors
    - Genes mode (`hvgs`, `top_mean`, `list_file`, `manual_list`)
-4. (Optional) use Presets (`Default`, `Pancreas`, `Lightweight`).
+4. (Optional) use the `Default` profile.
 5. Click **Export**.
 
 Result: `index.html` in the selected output directory.
