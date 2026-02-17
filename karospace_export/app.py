@@ -446,6 +446,7 @@ class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 class ExportApp(tk.Tk if tk is not None else object):
+    _OUTPUT_HTML_BASENAME = "KaroSpace"
     _NEIGHBOR_MATRIX_BUDGET_BYTES = 512 * 1024 * 1024
     _MARKER_GROUPBY_MAX_UNIQUE = 2048
     _INTERACTION_GROUPBY_MAX_UNIQUE = 512
@@ -461,6 +462,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._server: _ThreadingHTTPServer | None = None
         self._server_thread: threading.Thread | None = None
         self._last_outdir: Path | None = None
+        self._last_output_html: Path | None = None
         self._inspected_h5ad_path: Path | None = None
         self._inspected_var_name_set: set[str] | None = None
         self._inspected_coords_mode: str | None = None
@@ -957,7 +959,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             11,
             "Preview server",
             widget=serve_row,
-            hint="Optional local server to open the generated index.html.",
+            hint="Optional local server to open the latest generated KaroSpace_*.html file.",
         )
         self._set_advanced_visible(False)
 
@@ -986,7 +988,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "1.0",
             "Basic tab\n"
             "- Input .h5ad: absolute path to your AnnData file.\n"
-            "- Output directory: folder where index.html is written.\n"
+            "- Output directory: folder where KaroSpace_YYYYMMDD_HHMMSS.html is written.\n"
             "- Coordinates: auto/obsm/obs-centroid modes are converted to KaroSpace spatial input.\n"
             "- Section groupby: section split column used by load_spatial_data.\n"
             "- Initial color/theme/outline/title map directly to export_to_html.\n"
@@ -1005,7 +1007,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Min panel size, spot size, marker top N.\n"
             "- Neighbor stats permutations/seed and auto groupby mode.\n"
             "- Interaction markers limits and enable/disable toggle.\n"
-            "- Serve after export starts a local preview server.\n\n"
+            "- Serve after export starts a local preview server for the latest KaroSpace_*.html export.\n\n"
             "Presets\n"
             "- Default: balanced defaults.\n"
             "\n"
@@ -2152,10 +2154,11 @@ class ExportApp(tk.Tk if tk is not None else object):
             for warning in guard_warnings:
                 self._queue.put(("log", warning))
 
+            output_html = self._build_output_html_path(config.outdir)
             output_html_path = Path(
                 export_to_html(
                     dataset,
-                    output_path=str(config.outdir / "index.html"),
+                    output_path=str(output_html),
                     color=config.initial_color,
                     title=config.title,
                     min_panel_size=config.min_panel_size,
@@ -2188,7 +2191,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             )
             self._queue.put(("done", result))
             if serve_after_export:
-                self._queue.put(("start_server", output_html_path.parent))
+                self._queue.put(("start_server", output_html_path))
         except Exception:
             self._queue.put(("error", traceback.format_exc()))
         finally:
@@ -2210,6 +2213,7 @@ class ExportApp(tk.Tk if tk is not None else object):
                 result = payload
                 assert isinstance(result, AppResult)
                 self._last_outdir = result.outdir
+                self._last_output_html = result.output_html
                 self._log(
                     f"Export complete. sections={result.n_sections}, cells={result.n_cells}, html={result.output_html}"
                 )
@@ -2229,11 +2233,47 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         self.after(120, self._poll_events)
 
-    def _start_server(self, outdir: Path | None = None) -> None:
-        target = outdir or self._last_outdir
-        if target is None:
+    def _build_output_html_path(self, outdir: Path) -> Path:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = f"{self._OUTPUT_HTML_BASENAME}_{stamp}"
+        candidate = outdir / f"{base}.html"
+        counter = 1
+        while candidate.exists():
+            candidate = outdir / f"{base}_{counter:02d}.html"
+            counter += 1
+        return candidate
+
+    def _resolve_viewer_html(self, outdir: Path) -> Path:
+        pattern = f"{self._OUTPUT_HTML_BASENAME}_*.html"
+        candidates = sorted(outdir.glob(pattern))
+        if candidates:
+            return candidates[-1]
+        legacy_named = outdir / f"{self._OUTPUT_HTML_BASENAME}.html"
+        if legacy_named.exists():
+            return legacy_named
+        legacy = outdir / "index.html"
+        if legacy.exists():
+            return legacy
+        return outdir / pattern.replace("*", "YYYYMMDD_HHMMSS")
+
+    def _resolve_viewer_from_state(self) -> Path | None:
+        if self._last_output_html is not None and self._last_output_html.exists():
+            return self._last_output_html
+        outdir = self._last_outdir or (Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else None)
+        if outdir is None:
+            return None
+        return self._resolve_viewer_html(outdir)
+
+    def _start_server(self, target_path: Path | None = None) -> None:
+        if target_path is None:
+            viewer_file = self._resolve_viewer_from_state()
+        else:
+            viewer_file = target_path if target_path.suffix.lower() == ".html" else self._resolve_viewer_html(target_path)
+
+        if viewer_file is None:
             messagebox.showinfo("No export", "Run an export first.")
             return
+        target = viewer_file.parent
 
         try:
             port = int(self.port_var.get().strip())
@@ -2258,9 +2298,9 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         self._server = server
         self._server_thread = thread
-        self._log(f"Serving {target} at http://127.0.0.1:{port}")
+        self._log(f"Serving {target} at http://127.0.0.1:{port}/{viewer_file.name}")
         self.status_var.set(f"Serving on :{port}")
-        webbrowser.open_new_tab(f"http://127.0.0.1:{port}")
+        webbrowser.open_new_tab(f"http://127.0.0.1:{port}/{viewer_file.name}")
 
     def _stop_server(self) -> None:
         if self._server is None:
@@ -2282,20 +2322,19 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._open_path(path)
 
     def _open_viewer(self) -> None:
+        viewer = self._resolve_viewer_from_state()
+        if viewer is None:
+            messagebox.showinfo("No output", "Run an export first.")
+            return
+
         if self._server is not None:
             try:
                 port = int(self.port_var.get().strip())
             except ValueError:
                 port = 8000
-            webbrowser.open_new_tab(f"http://127.0.0.1:{port}")
+            webbrowser.open_new_tab(f"http://127.0.0.1:{port}/{viewer.name}")
             return
 
-        outdir = self._last_outdir or (Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else None)
-        if outdir is None:
-            messagebox.showinfo("No output", "Run an export first.")
-            return
-
-        viewer = outdir / "index.html"
         if not viewer.exists():
             messagebox.showerror("Viewer missing", f"Expected file not found:\n{viewer}")
             return

@@ -11,7 +11,7 @@ It is a front-end for KaroSpace backend functions:
 The builder output is a static HTML viewer:
 
 ```text
-<output_dir>/index.html
+<output_dir>/KaroSpace_YYYYMMDD_HHMMSS.html
 ```
 
 ## Download A Release (Recommended)
@@ -86,7 +86,7 @@ python -m karospace_export.app
 4. (Optional) use the `Default` profile.
 5. Click **Export**.
 
-Result: `index.html` in the selected output directory.
+Result: `KaroSpace_YYYYMMDD_HHMMSS.html` in the selected output directory.
 
 ## What The Builder Maps To
 
