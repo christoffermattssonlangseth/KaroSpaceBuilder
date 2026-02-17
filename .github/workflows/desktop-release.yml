@@ -22,7 +22,8 @@ jobs:
             artifact: KaroSpaceBuilder-macos-arm64
             zip_name: KaroSpaceBuilder-macos-arm64.zip
             python_version: "3.12"
-          - os: macos-15-intel
+          # Use the stable Intel runner label. `macos-15-intel` is not reliably available.
+          - os: macos-13
             target: macos-intel
             artifact: KaroSpaceBuilder-macos-intel
             zip_name: KaroSpaceBuilder-macos-intel.zip
