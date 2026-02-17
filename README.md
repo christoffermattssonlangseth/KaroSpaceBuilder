@@ -14,6 +14,23 @@ The builder output is a static HTML viewer:
 <output_dir>/index.html
 ```
 
+## Download A Release (Recommended)
+
+Prebuilt app bundles can be distributed so users do not need Python/terminal.
+
+Download the correct binary from [GitHub Releases](https://github.com/christoffermattssonlangseth/KaroSpaceBuilder/releases):
+- Apple Silicon (M1/M2/M3/M4): `KaroSpaceBuilder-macos-arm64.zip`
+- Intel Mac: `KaroSpaceBuilder-macos-intel.zip`
+- Windows: `KaroSpaceBuilder-windows.zip`
+- Linux (x86_64): `KaroSpaceBuilder-linux.zip`
+
+Linux run command after unzip:
+
+```bash
+cd KaroSpaceBuilder
+./KaroSpaceBuilder
+```
+
 ## Installation (GitHub)
 
 ```bash
@@ -87,21 +104,6 @@ Coordinates modes:
 - `obs:centroid_x_y` (converted to temporary `obsm['spatial']` before export)
 
 ## Desktop Builds For Non-technical Users
-
-Prebuilt app bundles can be distributed so users do not need Python/terminal.
-
-Download the correct binary for each machine:
-- Apple Silicon (M1/M2/M3/M4): `KaroSpaceBuilder-macos-arm64.zip`
-- Intel Mac: `KaroSpaceBuilder-macos-intel.zip`
-- Windows: `KaroSpaceBuilder-windows.zip`
-- Linux (x86_64): `KaroSpaceBuilder-linux.zip`
-
-Linux run command after unzip:
-
-```bash
-cd KaroSpaceBuilder
-./KaroSpaceBuilder
-```
 
 Build locally:
 

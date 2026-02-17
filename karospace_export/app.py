@@ -31,6 +31,38 @@ else:
 
 _TTK_FRAME_BASE = ttk.Frame if ttk is not None else object
 
+_KAROSPACE_LIGHT_PALETTE = {
+    "background": "#f5f5f5",
+    "text": "#1a1a1a",
+    "panel_bg": "#ffffff",
+    "border": "#e0e0e0",
+    "input_bg": "#ffffff",
+    "muted": "#666666",
+    "hover_bg": "#f0f0f0",
+    "accent": "#870052",
+    "accent_strong": "#4F0433",
+}
+
+_KAROSPACE_DARK_PALETTE = {
+    "background": "#1a1a1a",
+    "text": "#e0e0e0",
+    "panel_bg": "#2a2a2a",
+    "border": "#404040",
+    "input_bg": "#333333",
+    "muted": "#888888",
+    "hover_bg": "#3a3a3a",
+    "accent": "#FF876F",
+    "accent_strong": "#870052",
+}
+
+
+def _palette_for_mode(mode: str) -> dict[str, str]:
+    return (
+        dict(_KAROSPACE_DARK_PALETTE)
+        if str(mode).strip().lower() == "dark"
+        else dict(_KAROSPACE_LIGHT_PALETTE)
+    )
+
 
 def _get_anndata():
     import anndata as ad
@@ -85,14 +117,16 @@ class SearchableListEditor(_TTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            background="#ffffff",
-            foreground="#243b53",
-            selectbackground="#2f855a",
+            background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
+            foreground=_KAROSPACE_LIGHT_PALETTE["text"],
+            selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
             selectforeground="#ffffff",
             relief="solid",
             bd=1,
-            highlightthickness=0,
-            font=("Avenir Next", 10),
+            highlightthickness=1,
+            highlightbackground=_KAROSPACE_LIGHT_PALETTE["border"],
+            highlightcolor=_KAROSPACE_LIGHT_PALETTE["accent"],
+            font=("Segoe UI", 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
         scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
@@ -169,6 +203,17 @@ class SearchableListEditor(_TTK_FRAME_BASE):
         self.clear_btn.configure(state=state)
         self.listbox.configure(state=state)
 
+    def apply_palette(self, palette: dict[str, str]) -> None:
+        self.listbox.configure(
+            background=palette["input_bg"],
+            foreground=palette["text"],
+            selectbackground=palette["accent"],
+            selectforeground="#ffffff",
+            disabledforeground=palette["muted"],
+            highlightbackground=palette["border"],
+            highlightcolor=palette["accent"],
+        )
+
 
 class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
     def __init__(
@@ -222,14 +267,16 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            background="#ffffff",
-            foreground="#243b53",
-            selectbackground="#2f855a",
+            background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
+            foreground=_KAROSPACE_LIGHT_PALETTE["text"],
+            selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
             selectforeground="#ffffff",
             relief="solid",
             bd=1,
-            highlightthickness=0,
-            font=("Avenir Next", 10),
+            highlightthickness=1,
+            highlightbackground=_KAROSPACE_LIGHT_PALETTE["border"],
+            highlightcolor=_KAROSPACE_LIGHT_PALETTE["accent"],
+            font=("Segoe UI", 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
         self.listbox.bind("<<ListboxSelect>>", lambda _event: self._capture_visible_selection())
@@ -323,6 +370,17 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         self.clear_btn.configure(state=state)
         self.listbox.configure(state=state)
 
+    def apply_palette(self, palette: dict[str, str]) -> None:
+        self.listbox.configure(
+            background=palette["input_bg"],
+            foreground=palette["text"],
+            selectbackground=palette["accent"],
+            selectforeground="#ffffff",
+            disabledforeground=palette["muted"],
+            highlightbackground=palette["border"],
+            highlightcolor=palette["accent"],
+        )
+
 
 @dataclass(slots=True)
 class AppResult:
@@ -394,46 +452,122 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_style(self) -> None:
-        self.configure(bg="#efe9dd")
+        self._style = ttk.Style(self)
+        self._style.theme_use("clam")
+        self._app_palette = _palette_for_mode("light")
+        self._apply_app_theme("light")
 
-        style = ttk.Style(self)
-        style.theme_use("clam")
+    def _apply_app_theme(self, mode: str) -> None:
+        palette = _palette_for_mode(mode)
+        self._app_palette = palette
+        self.configure(bg=palette["background"])
 
-        style.configure("Root.TFrame", background="#efe9dd")
-        style.configure("Card.TFrame", background="#fffdf7")
-        style.configure("Header.TLabel", background="#fffdf7", foreground="#1f2933", font=("Avenir Next", 20, "bold"))
-        style.configure("Subheader.TLabel", background="#fffdf7", foreground="#52606d", font=("Avenir Next", 10))
-        style.configure("FieldLabel.TLabel", background="#fffdf7", foreground="#334e68", font=("Avenir Next", 10, "bold"))
-        style.configure("Body.TLabel", background="#fffdf7", foreground="#243b53", font=("Avenir Next", 10))
+        style = self._style
+        style.configure("Root.TFrame", background=palette["background"])
+        style.configure("Card.TFrame", background=palette["panel_bg"])
+        style.configure("Header.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 20, "bold"))
+        style.configure("Subheader.TLabel", background=palette["panel_bg"], foreground=palette["muted"], font=("Segoe UI", 10))
+        style.configure("FieldLabel.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10, "bold"))
+        style.configure("Body.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10))
 
-        style.configure("Primary.TButton", padding=(10, 8), font=("Avenir Next", 10, "bold"))
+        style.configure(
+            "Primary.TButton",
+            padding=(10, 8),
+            font=("Segoe UI", 10, "bold"),
+            borderwidth=1,
+            relief="solid",
+            background=palette["accent"],
+            foreground="#ffffff",
+        )
         style.map(
             "Primary.TButton",
-            background=[("!disabled", "#2f855a"), ("active", "#276749")],
-            foreground=[("!disabled", "#ffffff")],
+            background=[("disabled", palette["hover_bg"]), ("active", palette["accent_strong"]), ("!disabled", palette["accent"])],
+            foreground=[("disabled", palette["muted"]), ("!disabled", "#ffffff")],
         )
 
-        style.configure("Secondary.TButton", padding=(10, 8), font=("Avenir Next", 10))
+        style.configure(
+            "Secondary.TButton",
+            padding=(10, 8),
+            font=("Segoe UI", 10),
+            borderwidth=1,
+            relief="solid",
+            background=palette["input_bg"],
+            foreground=palette["text"],
+        )
         style.map(
             "Secondary.TButton",
-            background=[("!disabled", "#edf2f7"), ("active", "#e2e8f0")],
-            foreground=[("!disabled", "#1a202c")],
+            background=[("active", palette["hover_bg"]), ("!disabled", palette["input_bg"])],
+            foreground=[("disabled", palette["muted"]), ("!disabled", palette["text"])],
         )
 
-        style.configure("TNotebook", background="#efe9dd", borderwidth=0)
+        style.configure("TEntry", fieldbackground=palette["input_bg"], foreground=palette["text"], bordercolor=palette["border"])
+        style.configure(
+            "TCombobox",
+            fieldbackground=palette["input_bg"],
+            background=palette["input_bg"],
+            foreground=palette["text"],
+            bordercolor=palette["border"],
+            arrowcolor=palette["text"],
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", palette["input_bg"])],
+            background=[("readonly", palette["input_bg"])],
+            foreground=[("readonly", palette["text"])],
+        )
+        style.configure("TCheckbutton", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10))
+        style.map("TCheckbutton", foreground=[("disabled", palette["muted"]), ("!disabled", palette["text"])])
+
+        style.configure("TNotebook", background=palette["background"], borderwidth=0)
         style.configure(
             "TNotebook.Tab",
-            background="#edf2f7",
-            foreground="#334e68",
-            font=("Avenir Next", 10, "bold"),
+            background=palette["hover_bg"],
+            foreground=palette["muted"],
+            font=("Segoe UI", 10, "bold"),
             padding=(12, 8),
+            borderwidth=1,
+            relief="flat",
         )
         style.map(
             "TNotebook.Tab",
-            background=[("selected", "#fffdf7"), ("active", "#d9e2ec")],
-            foreground=[("selected", "#1f2933"), ("active", "#1f2933")],
+            background=[("selected", palette["panel_bg"]), ("active", palette["hover_bg"])],
+            foreground=[("selected", palette["text"]), ("active", palette["text"])],
         )
-        style.configure("Good.Horizontal.TProgressbar", troughcolor="#d9e2ec", background="#2f855a")
+        style.configure("Good.Horizontal.TProgressbar", troughcolor=palette["hover_bg"], background=palette["accent"])
+
+        if hasattr(self, "scroll_canvas"):
+            self.scroll_canvas.configure(background=palette["background"])
+        if hasattr(self, "help_text"):
+            self.help_text.configure(
+                background=palette["input_bg"],
+                foreground=palette["text"],
+                insertbackground=palette["text"],
+                highlightbackground=palette["border"],
+                highlightcolor=palette["accent"],
+            )
+        if hasattr(self, "log_text"):
+            self.log_text.configure(
+                background=palette["input_bg"],
+                foreground=palette["text"],
+                insertbackground=palette["text"],
+                highlightbackground=palette["border"],
+                highlightcolor=palette["accent"],
+            )
+
+        for attr in (
+            "additional_colors_editor",
+            "groupby_editor",
+            "manual_genes_editor",
+            "selection_additional_picker",
+            "selection_groupby_picker",
+            "selection_genes_picker",
+        ):
+            widget = getattr(self, attr, None)
+            if widget is not None and hasattr(widget, "apply_palette"):
+                widget.apply_palette(palette)
+
+    def _sync_app_theme_to_viewer_setting(self) -> None:
+        self._apply_app_theme(self.theme_var.get())
 
     def _build_variables(self) -> None:
         self.h5ad_var = tk.StringVar()
@@ -470,12 +604,13 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.status_var = tk.StringVar(value="Ready")
 
     def _build_layout(self) -> None:
+        palette = self._app_palette
         shell = ttk.Frame(self, style="Root.TFrame")
         shell.pack(fill="both", expand=True)
         shell.columnconfigure(0, weight=1)
         shell.rowconfigure(0, weight=1)
 
-        self.scroll_canvas = tk.Canvas(shell, background="#efe9dd", highlightthickness=0, bd=0)
+        self.scroll_canvas = tk.Canvas(shell, background=palette["background"], highlightthickness=0, bd=0)
         self.scroll_canvas.grid(row=0, column=0, sticky="nsew")
         self.scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.scroll_canvas.yview)
         self.scrollbar.grid(row=0, column=1, sticky="ns")
@@ -820,23 +955,26 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         help_tab.columnconfigure(0, weight=1)
         help_tab.rowconfigure(0, weight=1)
-        help_text = tk.Text(
+        self.help_text = tk.Text(
             help_tab,
             wrap="word",
-            background="#ffffff",
-            foreground="#243b53",
+            background=palette["input_bg"],
+            foreground=palette["text"],
             relief="solid",
             bd=1,
-            highlightthickness=0,
+            highlightthickness=1,
+            highlightbackground=palette["border"],
+            highlightcolor=palette["accent"],
+            insertbackground=palette["text"],
             padx=10,
             pady=10,
             height=18,
         )
-        help_text.grid(row=0, column=0, sticky="nsew")
-        help_scroll = ttk.Scrollbar(help_tab, orient="vertical", command=help_text.yview)
+        self.help_text.grid(row=0, column=0, sticky="nsew")
+        help_scroll = ttk.Scrollbar(help_tab, orient="vertical", command=self.help_text.yview)
         help_scroll.grid(row=0, column=1, sticky="ns")
-        help_text.configure(yscrollcommand=help_scroll.set)
-        help_text.insert(
+        self.help_text.configure(yscrollcommand=help_scroll.set)
+        self.help_text.insert(
             "1.0",
             "Basic tab\n"
             "- Input .h5ad: absolute path to your AnnData file.\n"
@@ -866,7 +1004,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Lightweight: fewer genes and faster analytics.\n\n"
             "Tip: click Inspect H5AD to load searchable dropdown choices from adata.obs and adata.var_names."
         )
-        help_text.configure(state="disabled")
+        self.help_text.configure(state="disabled")
 
         button_row = ttk.Frame(controls, style="Card.TFrame")
         self.inspect_btn = ttk.Button(button_row, text="Inspect H5AD", style="Secondary.TButton", command=self._inspect_h5ad)
@@ -902,12 +1040,17 @@ class ExportApp(tk.Tk if tk is not None else object):
             log_wrap,
             height=14,
             wrap="word",
-            background="#0f172a",
-            foreground="#cbd5e1",
-            insertbackground="#cbd5e1",
-            relief="flat",
+            background=palette["input_bg"],
+            foreground=palette["text"],
+            insertbackground=palette["text"],
+            relief="solid",
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=palette["border"],
+            highlightcolor=palette["accent"],
             padx=10,
             pady=10,
+            font=("Consolas", 10),
         )
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_wrap, orient="vertical", command=self.log_text.yview)
@@ -918,7 +1061,9 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
         self.neighbor_auto_var.trace_add("write", lambda *_: self._update_neighbor_groupby_state())
         self.selection_mode_var.trace_add("write", lambda *_: self._update_selection_mode_visibility())
+        self.theme_var.trace_add("write", lambda *_: self._sync_app_theme_to_viewer_setting())
         self._apply_preset("default", log=False)
+        self._sync_app_theme_to_viewer_setting()
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()
         self._set_selection_mode_visible(False)

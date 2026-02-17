@@ -113,6 +113,14 @@ Download the correct binary for each machine:
 - Apple Silicon (M1/M2/M3/M4): `KaroSpaceBuilder-macos-arm64.zip`
 - Intel Mac: `KaroSpaceBuilder-macos-intel.zip`
 - Windows: `KaroSpaceBuilder-windows.zip`
+- Linux (x86_64): `KaroSpaceBuilder-linux.zip`
+
+Linux run command after unzip:
+
+```bash
+cd KaroSpaceBuilder
+./KaroSpaceBuilder
+```
 
 Build locally:
 
@@ -124,6 +132,7 @@ python scripts/build_desktop.py
 Outputs:
 - macOS: `dist/KaroSpaceBuilder.app`
 - Windows: `dist/KaroSpaceBuilder/KaroSpaceBuilder.exe`
+- Linux: `dist/KaroSpaceBuilder/KaroSpaceBuilder`
 
 ## Troubleshooting
 
