@@ -2,6 +2,11 @@ name: Build Desktop Releases
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (default: latest v* tag)"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -12,7 +17,60 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      release_ref: ${{ steps.resolve.outputs.release_ref }}
+    steps:
+      - name: Checkout (for tag discovery)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag/ref
+        id: resolve
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_VALUE: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          release_tag=""
+          release_ref=""
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -n "${INPUT_TAG:-}" ]]; then
+              release_tag="$INPUT_TAG"
+            else
+              git fetch --force --tags
+              release_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+            fi
+            if [[ -z "$release_tag" ]]; then
+              echo "No v* tags found. Provide workflow input 'tag'." >&2
+              exit 1
+            fi
+            release_ref="refs/tags/$release_tag"
+          elif [[ "$EVENT_NAME" == "release" ]]; then
+            release_tag="$RELEASE_TAG"
+            release_ref="refs/tags/$release_tag"
+          elif [[ "$GITHUB_REF_VALUE" == refs/tags/* ]]; then
+            release_ref="$GITHUB_REF_VALUE"
+            release_tag="${GITHUB_REF_VALUE#refs/tags/}"
+          else
+            echo "Unsupported trigger for release workflow: $EVENT_NAME" >&2
+            exit 1
+          fi
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_ref=$release_ref" >> "$GITHUB_OUTPUT"
+          echo "Building tag: $release_tag"
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +102,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -90,8 +150,8 @@ jobs:
           path: release/*.zip
 
   publish:
-    needs: build
-    if: always() && (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [prepare, build]
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -110,4 +170,6 @@ jobs:
       - name: Attach binaries to GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
           files: release-artifacts/*.zip
+          fail_on_unmatched_files: true
