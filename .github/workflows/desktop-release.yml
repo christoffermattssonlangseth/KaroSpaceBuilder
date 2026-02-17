@@ -32,7 +32,8 @@ jobs:
             artifact: KaroSpaceBuilder-windows
             zip_name: KaroSpaceBuilder-windows.zip
             python_version: "3.12"
-          - os: ubuntu-22.04
+          # Build Linux on an older glibc baseline so binaries run on Ubuntu 20.04+.
+          - os: ubuntu-20.04
             target: linux
             artifact: KaroSpaceBuilder-linux
             zip_name: KaroSpaceBuilder-linux.zip
