@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import webbrowser
 
@@ -1030,7 +1031,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         ttk.Label(side, text="Runtime", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(side, textvariable=self.status_var, style="Subheader.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 12))
 
-        self.progress = ttk.Progressbar(side, mode="indeterminate", style="Good.Horizontal.TProgressbar")
+        self.progress = ttk.Progressbar(side, mode="determinate", maximum=100, value=0, style="Good.Horizontal.TProgressbar")
         self.progress.grid(row=2, column=0, sticky="ew")
 
         launch_row = ttk.Frame(side, style="Card.TFrame")
@@ -2105,11 +2106,24 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.selection_genes_picker.set_enabled(not busy)
 
         if busy:
-            self.progress.start(12)
-            self.status_var.set("Export running...")
+            self._set_progress(0, "Queued")
         else:
-            self.progress.stop()
-            self.status_var.set("Ready")
+            if self.status_var.get().startswith("Export running..."):
+                self.status_var.set("Ready")
+
+    @staticmethod
+    def _coerce_progress_value(value: object) -> int:
+        try:
+            percent = int(round(float(value)))
+        except (TypeError, ValueError):
+            percent = 0
+        return max(0, min(100, percent))
+
+    def _set_progress(self, value: object, stage: str | None = None) -> None:
+        percent = self._coerce_progress_value(value)
+        self.progress.configure(value=percent)
+        if stage:
+            self.status_var.set(f"Export running... {percent}% | {stage}")
 
     def _on_export(self) -> None:
         if self._export_thread and self._export_thread.is_alive():
@@ -2124,6 +2138,28 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         self._set_busy(True)
         self._log(f"Starting export: {config.h5ad_path} -> {config.outdir}")
+        self._log(
+            "Export options: "
+            f"coords={config.coords_mode or 'auto'}, "
+            f"groupby={config.section_groupby}, "
+            f"initial_color={config.initial_color}, "
+            f"theme={config.theme}, "
+            f"downsample={config.downsample if config.downsample is not None else 'all'}."
+        )
+        self._log(
+            "Gene settings: "
+            f"mode={config.genes_mode}, "
+            f"use_hvgs={config.use_hvgs}, "
+            f"hvg_limit={config.hvg_limit}, "
+            f"manual_genes={len(config.genes or [])}."
+        )
+        self._log(
+            "Analytics settings: "
+            f"marker_groupby={len(config.marker_genes_groupby or [])}, "
+            f"neighbor_groupby={len(config.neighbor_stats_groupby or [])}, "
+            f"neighbor_permutations={config.neighbor_stats_permutations if config.neighbor_stats_permutations is not None else 'auto'}, "
+            f"interaction_enabled={config.interaction_markers_enabled}."
+        )
         serve_after_export = bool(self.serve_var.get())
         thread = threading.Thread(target=self._run_export, args=(config, serve_after_export), daemon=True)
         self._export_thread = thread
@@ -2131,17 +2167,38 @@ class ExportApp(tk.Tk if tk is not None else object):
 
     def _run_export(self, config: BuilderConfig, serve_after_export: bool) -> None:
         temp_h5ad: Path | None = None
+        total_started = time.perf_counter()
+
+        def emit_progress(percent: int, stage: str, detail: str | None = None) -> None:
+            self._queue.put(("progress", (percent, stage, detail)))
+
         try:
+            emit_progress(5, "Importing API", "Resolving karospace export functions.")
             load_spatial_data, export_to_html = self._import_karospace_api()
+
+            emit_progress(12, "Preparing input", "Resolving coordinates mode and source data.")
             input_path, spatial_key, temp_h5ad = self._resolve_export_input(config)
             if temp_h5ad is not None:
                 self._queue.put(("log", "Converted obs centroid_x/centroid_y to temporary obsm['spatial']."))
 
+            emit_progress(
+                25,
+                "Loading spatial data",
+                f"Reading {input_path} with groupby='{config.section_groupby}' and spatial_key='{spatial_key}'.",
+            )
+            load_started = time.perf_counter()
             dataset = load_spatial_data(
                 str(input_path),
                 groupby=config.section_groupby,
                 spatial_key=spatial_key,
             )
+            load_elapsed = time.perf_counter() - load_started
+            emit_progress(
+                55,
+                "Validating analytics",
+                f"Dataset loaded: sections={int(dataset.n_sections)}, cells={int(dataset.n_cells)} in {load_elapsed:.1f}s.",
+            )
+
             marker_groupby, neighbor_groupby, interaction_groupby, guard_warnings = self._sanitize_analytics_groupbys(
                 dataset,
                 marker_genes_groupby=config.marker_genes_groupby,
@@ -2154,7 +2211,20 @@ class ExportApp(tk.Tk if tk is not None else object):
             for warning in guard_warnings:
                 self._queue.put(("log", warning))
 
+            neighbor_permutations = config.neighbor_stats_permutations if neighbor_groupby else 0
+            emit_progress(
+                68,
+                "Preparing output",
+                "Resolved analytics groupby columns: "
+                f"marker={len(marker_groupby or [])}, "
+                f"neighbor={len(neighbor_groupby)}, "
+                f"interaction={len(interaction_groupby or []) if config.interaction_markers_enabled else 0}, "
+                f"neighbor_permutations={neighbor_permutations if neighbor_permutations else 'off'}.",
+            )
+
             output_html = self._build_output_html_path(config.outdir)
+            emit_progress(76, "Writing viewer", f"Exporting HTML viewer to {output_html}.")
+            export_started = time.perf_counter()
             output_html_path = Path(
                 export_to_html(
                     dataset,
@@ -2173,7 +2243,7 @@ class ExportApp(tk.Tk if tk is not None else object):
                     marker_genes_groupby=marker_groupby,
                     marker_genes_top_n=config.marker_genes_top_n,
                     neighbor_stats_groupby=neighbor_groupby,
-                    neighbor_stats_permutations=(config.neighbor_stats_permutations if neighbor_groupby else 0),
+                    neighbor_stats_permutations=neighbor_permutations,
                     neighbor_stats_seed=config.neighbor_stats_seed,
                     interaction_markers_groupby=interaction_groupby if config.interaction_markers_enabled else None,
                     interaction_markers_top_targets=config.interaction_markers_top_targets,
@@ -2182,6 +2252,8 @@ class ExportApp(tk.Tk if tk is not None else object):
                     interaction_markers_min_neighbors=config.interaction_markers_min_neighbors,
                 )
             ).expanduser()
+            export_elapsed = time.perf_counter() - export_started
+            emit_progress(95, "Finalizing", f"Viewer bundle created in {export_elapsed:.1f}s: {output_html_path}")
 
             result = AppResult(
                 outdir=output_html_path.parent,
@@ -2189,8 +2261,11 @@ class ExportApp(tk.Tk if tk is not None else object):
                 n_sections=int(dataset.n_sections),
                 output_html=output_html_path,
             )
+            total_elapsed = time.perf_counter() - total_started
+            emit_progress(100, "Complete", f"Total export time: {total_elapsed:.1f}s.")
             self._queue.put(("done", result))
             if serve_after_export:
+                self._queue.put(("log", "Starting preview server for the exported viewer."))
                 self._queue.put(("start_server", output_html_path))
         except Exception:
             self._queue.put(("error", traceback.format_exc()))
@@ -2222,6 +2297,14 @@ class ExportApp(tk.Tk if tk is not None else object):
                 outdir = payload
                 assert isinstance(outdir, Path)
                 self._start_server(outdir)
+            elif kind == "progress":
+                if not isinstance(payload, tuple) or len(payload) < 2:
+                    continue
+                percent, stage = payload[0], str(payload[1]).strip()
+                detail = str(payload[2]).strip() if len(payload) >= 3 and payload[2] is not None else ""
+                self._set_progress(percent, stage or None)
+                if detail:
+                    self._log(detail)
             elif kind == "log":
                 self._log(str(payload))
             elif kind == "error":
