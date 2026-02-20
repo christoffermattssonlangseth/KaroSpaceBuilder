@@ -420,6 +420,7 @@ class BuilderConfig:
     initial_color: str
     title: str
     theme: str
+    enable_numba_jit: bool
     outline_by: str | None
     min_panel_size: int
     spot_size: float | str | None
@@ -600,6 +601,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.initial_color_var = tk.StringVar(value="leiden")
         self.title_var = tk.StringVar(value="KaroSpace")
         self.theme_var = tk.StringVar(value="dark")
+        self.numba_jit_var = tk.BooleanVar(value=False)
         self.outline_by_var = tk.StringVar(value="condition")
 
         self.genes_mode_var = tk.StringVar(value="hvgs")
@@ -951,13 +953,28 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Maps to interaction_markers_top_targets/top_genes/min_cells/min_neighbors.",
         )
 
+        runtime_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
+        self.numba_jit_check = ttk.Checkbutton(
+            runtime_row,
+            text="Performance mode (enable numba JIT)",
+            variable=self.numba_jit_var,
+        )
+        self.numba_jit_check.pack(side="left")
+        self._option_row(
+            self.advanced_content,
+            11,
+            "Runtime mode",
+            widget=runtime_row,
+            hint="Faster on some datasets. If unstable in the desktop app, turn this off.",
+        )
+
         serve_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
         ttk.Checkbutton(serve_row, text="Serve after export", variable=self.serve_var).pack(side="left")
         ttk.Label(serve_row, text="Port", style="Body.TLabel").pack(side="left", padx=(12, 4))
         ttk.Entry(serve_row, textvariable=self.port_var, width=10).pack(side="left")
         self._option_row(
             self.advanced_content,
-            11,
+            13,
             "Preview server",
             widget=serve_row,
             hint="Optional local server to open the latest generated KaroSpace_*.html file.",
@@ -1008,6 +1025,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Min panel size, spot size, marker top N.\n"
             "- Neighbor stats permutations/seed and auto groupby mode.\n"
             "- Interaction markers limits and enable/disable toggle.\n"
+            "- Runtime mode: optional numba JIT performance mode (can be less stable in frozen app).\n"
             "- Serve after export starts a local preview server for the latest KaroSpace_*.html export.\n\n"
             "Presets\n"
             "- Default: balanced defaults.\n"
@@ -1318,6 +1336,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.outline_by_var.set("condition")
         self.min_panel_size_var.set("120")
         self.spot_size_var.set("auto")
+        self.numba_jit_var.set(False)
         self.marker_genes_top_n_var.set("50")
         self.neighbor_auto_var.set(True)
         self.neighbor_permutations_var.set("auto")
@@ -1730,6 +1749,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             outline_by=outline_by,
             min_panel_size=min_panel_size,
             spot_size=spot_size,
+            enable_numba_jit=bool(self.numba_jit_var.get()),
             downsample=downsample,
             additional_colors=additional_colors or None,
             genes=genes,
@@ -1750,15 +1770,15 @@ class ExportApp(tk.Tk if tk is not None else object):
         )
 
     @staticmethod
-    def _import_karospace_api():
+    def _import_karospace_api(*, enable_numba_jit: bool = False):
         import importlib
         import importlib.metadata as importlib_metadata
         import inspect
 
         # scanpy imports numba with cache=True in some code paths; in certain
         # environments this crashes during import. Disable JIT by default for
-        # robust GUI startup/export unless the user explicitly overrides it.
-        os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+        # robust GUI startup/export unless the user explicitly enables performance mode.
+        os.environ["NUMBA_DISABLE_JIT"] = "0" if bool(enable_numba_jit) else "1"
 
         def _install_scanpy_inspect_fallback() -> None:
             original_getsource = getattr(inspect, "getsource", None)
@@ -2089,6 +2109,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.gene_list_entry,
             self.gene_list_button,
             self.advanced_toggle_btn,
+            self.numba_jit_check,
             self.selection_mode_check,
             self.selection_apply_btn,
             self.selection_sync_btn,
@@ -2160,6 +2181,10 @@ class ExportApp(tk.Tk if tk is not None else object):
             f"neighbor_permutations={config.neighbor_stats_permutations if config.neighbor_stats_permutations is not None else 'auto'}, "
             f"interaction_enabled={config.interaction_markers_enabled}."
         )
+        self._log(
+            "Runtime mode: "
+            f"numba_jit={'on' if config.enable_numba_jit else 'off (safe mode)'}."
+        )
         serve_after_export = bool(self.serve_var.get())
         thread = threading.Thread(target=self._run_export, args=(config, serve_after_export), daemon=True)
         self._export_thread = thread
@@ -2174,7 +2199,7 @@ class ExportApp(tk.Tk if tk is not None else object):
 
         try:
             emit_progress(5, "Importing API", "Resolving karospace export functions.")
-            load_spatial_data, export_to_html = self._import_karospace_api()
+            load_spatial_data, export_to_html = self._import_karospace_api(enable_numba_jit=config.enable_numba_jit)
 
             emit_progress(12, "Preparing input", "Resolving coordinates mode and source data.")
             input_path, spatial_key, temp_h5ad = self._resolve_export_input(config)
