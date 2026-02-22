@@ -4,6 +4,7 @@ numpy>=1.24
 pandas>=2.0
 scipy>=1.10
 Pillow>=10.0
+customtkinter>=5.2
 
 [build]
 pyinstaller>=6.0

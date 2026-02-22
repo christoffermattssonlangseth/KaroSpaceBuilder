@@ -29,10 +29,21 @@ def _pyinstaller_args(onefile: bool) -> list[str]:
 
     # AnnData/scientific stacks often need broader collection to avoid missing
     # runtime modules in frozen builds.
-    for module in ("karospace", "scanpy", "anndata", "numpy", "pandas", "scipy", "h5py", "PIL", "sklearn"):
+    for module in (
+        "karospace",
+        "scanpy",
+        "anndata",
+        "numpy",
+        "pandas",
+        "scipy",
+        "h5py",
+        "PIL",
+        "sklearn",
+        "customtkinter",
+    ):
         args.extend(["--collect-submodules", module])
 
-    for module in ("karospace", "scanpy", "anndata", "pandas", "scipy", "PIL", "sklearn"):
+    for module in ("karospace", "scanpy", "anndata", "pandas", "scipy", "PIL", "sklearn", "customtkinter"):
         args.extend(["--collect-data", module])
 
     # scanpy queries dependency versions via importlib.metadata at runtime.
