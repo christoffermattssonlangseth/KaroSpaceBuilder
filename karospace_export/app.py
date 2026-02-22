@@ -20,17 +20,18 @@ from .utils import parse_genes_mode, resolve_gene_names
 
 try:
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox
+    import customtkinter as ctk
 except Exception as exc:  # pragma: no cover - platform/runtime guard
     tk = None
     filedialog = None
     messagebox = None
-    ttk = None
+    ctk = None
     TK_IMPORT_ERROR = exc
 else:
     TK_IMPORT_ERROR = None
 
-_TTK_FRAME_BASE = ttk.Frame if ttk is not None else object
+_CTK_FRAME_BASE = ctk.CTkFrame if ctk is not None else object
 
 _KI_COLORS = {
     "plum_dark": "#4F0433",
@@ -85,6 +86,160 @@ def _palette_for_mode(mode: str) -> dict[str, str]:
     )
 
 
+def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
+    return {
+        "root": {"fg_color": palette["background"]},
+        "root_frame": {"fg_color": palette["background"], "corner_radius": 0},
+        "card_frame": {
+            "fg_color": palette["panel_bg"],
+            "corner_radius": 14,
+            "border_width": 1,
+            "border_color": palette["border"],
+        },
+        "hero_card": {
+            "fg_color": palette["panel_bg"],
+            "corner_radius": 18,
+            "border_width": 1,
+            "border_color": palette["accent"],
+        },
+        "highlight_card": {
+            "fg_color": palette["panel_bg"],
+            "corner_radius": 12,
+            "border_width": 1,
+            "border_color": palette["accent_strong"],
+        },
+        "sub_frame": {"fg_color": "transparent", "corner_radius": 0},
+        "section_label": {
+            "font": ("Segoe UI", 10, "bold"),
+            "text_color": palette["accent"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "hero_label": {
+            "font": ("Segoe UI", 32, "bold"),
+            "text_color": palette["text"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "header_label": {
+            "font": ("Segoe UI", 20, "bold"),
+            "text_color": palette["text"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "subheader_label": {
+            "font": ("Segoe UI", 11),
+            "text_color": palette["muted"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "field_label": {
+            "font": ("Segoe UI", 11, "bold"),
+            "text_color": palette["text"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "body_label": {
+            "font": ("Segoe UI", 10),
+            "text_color": palette["text"],
+            "fg_color": "transparent",
+            "anchor": "w",
+        },
+        "primary_button": {
+            "fg_color": palette["accent"],
+            "hover_color": palette["accent_strong"],
+            "text_color": palette.get("on_accent", "#ffffff"),
+            "corner_radius": 12,
+            "font": ("Segoe UI", 11, "bold"),
+            "height": 38,
+            "border_width": 0,
+        },
+        "secondary_button": {
+            "fg_color": palette["input_bg"],
+            "hover_color": palette["hover_bg"],
+            "text_color": palette["text"],
+            "corner_radius": 12,
+            "font": ("Segoe UI", 10),
+            "height": 36,
+            "border_width": 1,
+            "border_color": palette["border"],
+        },
+        "pill_label": {
+            "font": ("Segoe UI", 9, "bold"),
+            "text_color": palette.get("on_accent", "#ffffff"),
+            "fg_color": palette["accent"],
+            "corner_radius": 999,
+            "padx": 10,
+            "pady": 4,
+        },
+        "muted_pill_label": {
+            "font": ("Segoe UI", 9, "bold"),
+            "text_color": palette["text"],
+            "fg_color": palette["hover_bg"],
+            "corner_radius": 999,
+            "padx": 10,
+            "pady": 4,
+        },
+        "entry": {
+            "fg_color": palette["input_bg"],
+            "text_color": palette["text"],
+            "placeholder_text_color": palette["muted"],
+            "border_color": palette["border"],
+            "corner_radius": 10,
+        },
+        "combo": {
+            "fg_color": palette["input_bg"],
+            "text_color": palette["text"],
+            "button_color": palette["hover_bg"],
+            "button_hover_color": palette["accent"],
+            "dropdown_fg_color": palette["panel_bg"],
+            "dropdown_text_color": palette["text"],
+            "dropdown_hover_color": palette["hover_bg"],
+            "corner_radius": 10,
+        },
+        "checkbox": {
+            "fg_color": palette["accent"],
+            "hover_color": palette["accent_strong"],
+            "checkmark_color": palette.get("on_accent", "#ffffff"),
+            "text_color": palette["text"],
+            "border_color": palette["border"],
+            "font": ("Segoe UI", 10),
+        },
+        "tabview": {
+            "fg_color": palette["panel_bg"],
+            "segmented_button_fg_color": palette["hover_bg"],
+            "segmented_button_selected_color": palette["accent"],
+            "segmented_button_selected_hover_color": palette["accent_strong"],
+            "segmented_button_unselected_color": palette["hover_bg"],
+            "segmented_button_unselected_hover_color": palette["border"],
+            "text_color": palette["text"],
+            "corner_radius": 12,
+            "border_width": 0,
+            "border_color": palette["border"],
+        },
+        "divider": {
+            "fg_color": palette["border"],
+            "corner_radius": 999,
+        },
+        "textbox": {
+            "fg_color": palette["input_bg"],
+            "text_color": palette["text"],
+            "border_color": palette["border"],
+            "corner_radius": 10,
+            "border_width": 1,
+            "scrollbar_button_color": palette["hover_bg"],
+            "scrollbar_button_hover_color": palette["accent"],
+        },
+        "progress": {
+            "fg_color": palette["hover_bg"],
+            "progress_color": palette["accent"],
+            "border_color": palette["border"],
+            "corner_radius": 10,
+            "height": 14,
+        },
+    }
+
+
 def _get_anndata():
     import anndata as ad
 
@@ -97,7 +252,7 @@ def _get_numpy():
     return np
 
 
-class SearchableListEditor(_TTK_FRAME_BASE):
+class SearchableListEditor(_CTK_FRAME_BASE):
     def __init__(
         self,
         parent,
@@ -105,31 +260,47 @@ class SearchableListEditor(_TTK_FRAME_BASE):
         label: str,
         height: int = 8,
         help_text: str | None = None,
+        palette: dict[str, str] | None = None,
     ) -> None:
-        super().__init__(parent, style="Card.TFrame")
+        self._palette = dict(palette or _palette_for_mode("dark"))
+        self._theme = _ctk_theme_config(self._palette)
+        super().__init__(parent, **self._theme["sub_frame"])
         self._choices: list[str] = []
         self._input_var = tk.StringVar(value="")
 
         self.columnconfigure(0, weight=1)
-        ttk.Label(self, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.label_widget = ctk.CTkLabel(self, text=label, **self._theme["field_label"])
+        self.label_widget.grid(row=0, column=0, sticky="w", pady=(0, 6))
 
-        controls = ttk.Frame(self, style="Card.TFrame")
+        controls = ctk.CTkFrame(self, **self._theme["sub_frame"])
         controls.grid(row=1, column=0, sticky="ew")
         controls.columnconfigure(0, weight=1)
 
-        self.entry = ttk.Combobox(controls, textvariable=self._input_var, state="normal")
+        self.entry = ctk.CTkComboBox(
+            controls,
+            variable=self._input_var,
+            values=[],
+            state="normal",
+            **self._theme["combo"],
+        )
         self.entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.entry.bind("<KeyRelease>", self._on_search)
         self.entry.bind("<Return>", lambda _event: self.add_current())
 
-        self.add_btn = ttk.Button(controls, text="+ Add", style="Secondary.TButton", command=self.add_current)
+        self.add_btn = ctk.CTkButton(controls, text="+ Add", command=self.add_current, width=88, **self._theme["secondary_button"])
         self.add_btn.grid(row=0, column=1, padx=(0, 6))
-        self.remove_btn = ttk.Button(controls, text="Remove", style="Secondary.TButton", command=self.remove_selected)
+        self.remove_btn = ctk.CTkButton(
+            controls,
+            text="Remove",
+            command=self.remove_selected,
+            width=88,
+            **self._theme["secondary_button"],
+        )
         self.remove_btn.grid(row=0, column=2, padx=(0, 6))
-        self.clear_btn = ttk.Button(controls, text="Clear", style="Secondary.TButton", command=self.clear)
+        self.clear_btn = ctk.CTkButton(controls, text="Clear", command=self.clear, width=88, **self._theme["secondary_button"])
         self.clear_btn.grid(row=0, column=3)
 
-        list_wrap = ttk.Frame(self, style="Card.TFrame")
+        list_wrap = ctk.CTkFrame(self, **self._theme["sub_frame"])
         list_wrap.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         list_wrap.columnconfigure(0, weight=1)
 
@@ -138,24 +309,22 @@ class SearchableListEditor(_TTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
-            foreground=_KAROSPACE_LIGHT_PALETTE["text"],
-            selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
-            selectforeground=_KAROSPACE_LIGHT_PALETTE["on_accent"],
             relief="solid",
             bd=1,
             highlightthickness=1,
-            highlightbackground=_KAROSPACE_LIGHT_PALETTE["border"],
-            highlightcolor=_KAROSPACE_LIGHT_PALETTE["accent"],
             font=("Segoe UI", 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
-        scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
-        self.listbox.configure(yscrollcommand=scroll.set)
+        self.scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        self.scroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.configure(yscrollcommand=self.scroll.set)
 
+        self.help_label: ctk.CTkLabel | None = None
         if help_text:
-            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+            self.help_label = ctk.CTkLabel(self, text=help_text, **self._theme["subheader_label"])
+            self.help_label.grid(row=3, column=0, sticky="w", pady=(6, 0))
+
+        self.apply_palette(self._palette)
 
     def _on_search(self, _event) -> None:
         self._update_choices(self._input_var.get())
@@ -191,9 +360,11 @@ class SearchableListEditor(_TTK_FRAME_BASE):
             self.listbox.selection_set(idx)
             self.listbox.see(idx)
             self._input_var.set("")
+            self.entry.set("")
             return
         self.listbox.insert("end", value)
         self._input_var.set("")
+        self.entry.set("")
         self._update_choices("")
 
     def remove_selected(self) -> None:
@@ -225,18 +396,39 @@ class SearchableListEditor(_TTK_FRAME_BASE):
         self.listbox.configure(state=state)
 
     def apply_palette(self, palette: dict[str, str]) -> None:
+        self._palette = dict(palette)
+        self._theme = _ctk_theme_config(self._palette)
+        self.label_widget.configure(**self._theme["field_label"])
+        self.entry.configure(**self._theme["combo"])
+        self.add_btn.configure(**self._theme["secondary_button"])
+        self.remove_btn.configure(**self._theme["secondary_button"])
+        self.clear_btn.configure(**self._theme["secondary_button"])
+        if self.help_label is not None:
+            self.help_label.configure(**self._theme["subheader_label"])
         self.listbox.configure(
-            background=palette["input_bg"],
-            foreground=palette["text"],
-            selectbackground=palette["accent"],
-            selectforeground=palette.get("on_accent", "#ffffff"),
-            disabledforeground=palette["muted"],
-            highlightbackground=palette["border"],
-            highlightcolor=palette["accent"],
+            background=self._palette["input_bg"],
+            foreground=self._palette["text"],
+            selectbackground=self._palette["accent"],
+            selectforeground=self._palette.get("on_accent", "#ffffff"),
+            disabledforeground=self._palette["muted"],
+            highlightbackground=self._palette["border"],
+            highlightcolor=self._palette["accent"],
         )
+        try:
+            self.scroll.configure(
+                background=self._palette["panel_bg"],
+                troughcolor=self._palette["hover_bg"],
+                activebackground=self._palette["accent"],
+                highlightbackground=self._palette["border"],
+            )
+        except tk.TclError:
+            try:
+                self.scroll.configure(background=self._palette["panel_bg"], activebackground=self._palette["accent"])
+            except tk.TclError:
+                pass
 
 
-class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
+class SearchableMultiSelectEditor(_CTK_FRAME_BASE):
     def __init__(
         self,
         parent,
@@ -245,8 +437,11 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         height: int = 8,
         help_text: str | None = None,
         max_visible: int = 500,
+        palette: dict[str, str] | None = None,
     ) -> None:
-        super().__init__(parent, style="Card.TFrame")
+        self._palette = dict(palette or _palette_for_mode("dark"))
+        self._theme = _ctk_theme_config(self._palette)
+        super().__init__(parent, **self._theme["sub_frame"])
         self._choices: list[str] = []
         self._selected_values: set[str] = set()
         self._search_var = tk.StringVar(value="")
@@ -254,32 +449,35 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         self._max_visible = max(50, int(max_visible))
 
         self.columnconfigure(0, weight=1)
-        ttk.Label(self, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.label_widget = ctk.CTkLabel(self, text=label, **self._theme["field_label"])
+        self.label_widget.grid(row=0, column=0, sticky="w", pady=(0, 6))
 
-        controls = ttk.Frame(self, style="Card.TFrame")
+        controls = ctk.CTkFrame(self, **self._theme["sub_frame"])
         controls.grid(row=1, column=0, sticky="ew")
         controls.columnconfigure(0, weight=1)
 
-        self.search_entry = ttk.Entry(controls, textvariable=self._search_var)
+        self.search_entry = ctk.CTkEntry(controls, textvariable=self._search_var, **self._theme["entry"])
         self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.search_entry.bind("<KeyRelease>", lambda _event: self._on_search_changed())
 
-        self.select_all_btn = ttk.Button(
+        self.select_all_btn = ctk.CTkButton(
             controls,
             text="Select all",
-            style="Secondary.TButton",
             command=self.select_all_matches,
+            width=100,
+            **self._theme["secondary_button"],
         )
         self.select_all_btn.grid(row=0, column=1, padx=(0, 6))
-        self.clear_btn = ttk.Button(
+        self.clear_btn = ctk.CTkButton(
             controls,
             text="Clear",
-            style="Secondary.TButton",
             command=self.clear_selection,
+            width=90,
+            **self._theme["secondary_button"],
         )
         self.clear_btn.grid(row=0, column=2)
 
-        list_wrap = ttk.Frame(self, style="Card.TFrame")
+        list_wrap = ctk.CTkFrame(self, **self._theme["sub_frame"])
         list_wrap.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         list_wrap.columnconfigure(0, weight=1)
 
@@ -288,27 +486,26 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            background=_KAROSPACE_LIGHT_PALETTE["input_bg"],
-            foreground=_KAROSPACE_LIGHT_PALETTE["text"],
-            selectbackground=_KAROSPACE_LIGHT_PALETTE["accent"],
-            selectforeground=_KAROSPACE_LIGHT_PALETTE["on_accent"],
             relief="solid",
             bd=1,
             highlightthickness=1,
-            highlightbackground=_KAROSPACE_LIGHT_PALETTE["border"],
-            highlightcolor=_KAROSPACE_LIGHT_PALETTE["accent"],
             font=("Segoe UI", 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
         self.listbox.bind("<<ListboxSelect>>", lambda _event: self._capture_visible_selection())
-        scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
-        self.listbox.configure(yscrollcommand=scroll.set)
+        self.scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        self.scroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.configure(yscrollcommand=self.scroll.set)
 
-        ttk.Label(self, textvariable=self._info_var, style="Subheader.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self.info_label = ctk.CTkLabel(self, textvariable=self._info_var, **self._theme["subheader_label"])
+        self.info_label.grid(row=3, column=0, sticky="w", pady=(6, 0))
 
+        self.help_label: ctk.CTkLabel | None = None
         if help_text:
-            ttk.Label(self, text=help_text, style="Subheader.TLabel").grid(row=4, column=0, sticky="w", pady=(4, 0))
+            self.help_label = ctk.CTkLabel(self, text=help_text, **self._theme["subheader_label"])
+            self.help_label.grid(row=4, column=0, sticky="w", pady=(4, 0))
+
+        self.apply_palette(self._palette)
 
     def _all_matches(self, needle: str) -> list[str]:
         if not needle:
@@ -392,15 +589,36 @@ class SearchableMultiSelectEditor(_TTK_FRAME_BASE):
         self.listbox.configure(state=state)
 
     def apply_palette(self, palette: dict[str, str]) -> None:
+        self._palette = dict(palette)
+        self._theme = _ctk_theme_config(self._palette)
+        self.label_widget.configure(**self._theme["field_label"])
+        self.search_entry.configure(**self._theme["entry"])
+        self.select_all_btn.configure(**self._theme["secondary_button"])
+        self.clear_btn.configure(**self._theme["secondary_button"])
+        self.info_label.configure(**self._theme["subheader_label"])
+        if self.help_label is not None:
+            self.help_label.configure(**self._theme["subheader_label"])
         self.listbox.configure(
-            background=palette["input_bg"],
-            foreground=palette["text"],
-            selectbackground=palette["accent"],
-            selectforeground=palette.get("on_accent", "#ffffff"),
-            disabledforeground=palette["muted"],
-            highlightbackground=palette["border"],
-            highlightcolor=palette["accent"],
+            background=self._palette["input_bg"],
+            foreground=self._palette["text"],
+            selectbackground=self._palette["accent"],
+            selectforeground=self._palette.get("on_accent", "#ffffff"),
+            disabledforeground=self._palette["muted"],
+            highlightbackground=self._palette["border"],
+            highlightcolor=self._palette["accent"],
         )
+        try:
+            self.scroll.configure(
+                background=self._palette["panel_bg"],
+                troughcolor=self._palette["hover_bg"],
+                activebackground=self._palette["accent"],
+                highlightbackground=self._palette["border"],
+            )
+        except tk.TclError:
+            try:
+                self.scroll.configure(background=self._palette["panel_bg"], activebackground=self._palette["accent"])
+            except tk.TclError:
+                pass
 
 
 @dataclass(slots=True)
@@ -447,7 +665,7 @@ class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
 
-class ExportApp(tk.Tk if tk is not None else object):
+class ExportApp(ctk.CTk if ctk is not None else object):
     _OUTPUT_HTML_BASENAME = "KaroSpace"
     _NEIGHBOR_MATRIX_BUDGET_BYTES = 512 * 1024 * 1024
     _MARKER_GROUPBY_MAX_UNIQUE = 2048
@@ -468,6 +686,7 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._inspected_h5ad_path: Path | None = None
         self._inspected_var_name_set: set[str] | None = None
         self._inspected_coords_mode: str | None = None
+        self._themed_widgets: dict[str, list[tk.Widget]] = {}
 
         self._build_style()
         self._build_variables()
@@ -476,107 +695,43 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_style(self) -> None:
-        self._style = ttk.Style(self)
-        self._style.theme_use("clam")
+        self._themed_widgets = {}
         self._app_palette = _palette_for_mode("dark")
-        self._apply_app_theme("dark")
+        self._theme = _ctk_theme_config(self._app_palette)
+        ctk.set_appearance_mode("dark")
+        self.configure(**self._theme["root"])
 
     def _apply_app_theme(self, mode: str) -> None:
         palette = _palette_for_mode(mode)
         self._app_palette = palette
-        self.configure(bg=palette["background"])
+        self._theme = _ctk_theme_config(palette)
+        ctk.set_appearance_mode("dark" if mode.strip().lower() == "dark" else "light")
+        self.configure(**self._theme["root"])
 
-        style = self._style
-        style.configure("Root.TFrame", background=palette["background"])
-        style.configure("Card.TFrame", background=palette["panel_bg"])
-        style.configure("Header.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 20, "bold"))
-        style.configure("Subheader.TLabel", background=palette["panel_bg"], foreground=palette["muted"], font=("Segoe UI", 10))
-        style.configure("FieldLabel.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10, "bold"))
-        style.configure("Body.TLabel", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10))
+        for role, widgets in self._themed_widgets.items():
+            role_style = self._theme.get(role)
+            if not role_style:
+                continue
+            for widget in widgets:
+                if widget is None:
+                    continue
+                try:
+                    widget.configure(**role_style)
+                except Exception:
+                    continue
 
-        style.configure(
-            "Primary.TButton",
-            padding=(10, 8),
-            font=("Segoe UI", 10, "bold"),
-            borderwidth=1,
-            relief="solid",
-            background=palette["accent"],
-            foreground=palette.get("on_accent", "#ffffff"),
-        )
-        style.map(
-            "Primary.TButton",
-            background=[("disabled", palette["hover_bg"]), ("active", palette["accent_strong"]), ("!disabled", palette["accent"])],
-            foreground=[("disabled", palette["muted"]), ("!disabled", palette.get("on_accent", "#ffffff"))],
-        )
-
-        style.configure(
-            "Secondary.TButton",
-            padding=(10, 8),
-            font=("Segoe UI", 10),
-            borderwidth=1,
-            relief="solid",
-            background=palette["input_bg"],
-            foreground=palette["text"],
-        )
-        style.map(
-            "Secondary.TButton",
-            background=[("active", palette["hover_bg"]), ("!disabled", palette["input_bg"])],
-            foreground=[("disabled", palette["muted"]), ("!disabled", palette["text"])],
-        )
-
-        style.configure("TEntry", fieldbackground=palette["input_bg"], foreground=palette["text"], bordercolor=palette["border"])
-        style.configure(
-            "TCombobox",
-            fieldbackground=palette["input_bg"],
-            background=palette["input_bg"],
-            foreground=palette["text"],
-            bordercolor=palette["border"],
-            arrowcolor=palette["text"],
-        )
-        style.map(
-            "TCombobox",
-            fieldbackground=[("readonly", palette["input_bg"])],
-            background=[("readonly", palette["input_bg"])],
-            foreground=[("readonly", palette["text"])],
-        )
-        style.configure("TCheckbutton", background=palette["panel_bg"], foreground=palette["text"], font=("Segoe UI", 10))
-        style.map("TCheckbutton", foreground=[("disabled", palette["muted"]), ("!disabled", palette["text"])])
-
-        style.configure("TNotebook", background=palette["background"], borderwidth=0)
-        style.configure(
-            "TNotebook.Tab",
-            background=palette["hover_bg"],
-            foreground=palette["muted"],
-            font=("Segoe UI", 10, "bold"),
-            padding=(12, 8),
-            borderwidth=1,
-            relief="flat",
-        )
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", palette["panel_bg"]), ("active", palette["hover_bg"])],
-            foreground=[("selected", palette["text"]), ("active", palette["text"])],
-        )
-        style.configure("Good.Horizontal.TProgressbar", troughcolor=palette["hover_bg"], background=palette["accent"])
-
-        if hasattr(self, "scroll_canvas"):
-            self.scroll_canvas.configure(background=palette["background"])
         if hasattr(self, "help_text"):
-            self.help_text.configure(
-                background=palette["input_bg"],
-                foreground=palette["text"],
-                insertbackground=palette["text"],
-                highlightbackground=palette["border"],
-                highlightcolor=palette["accent"],
-            )
+            self.help_text.configure(**self._theme["textbox"])
         if hasattr(self, "log_text"):
-            self.log_text.configure(
-                background=palette["input_bg"],
-                foreground=palette["text"],
-                insertbackground=palette["text"],
-                highlightbackground=palette["border"],
-                highlightcolor=palette["accent"],
+            self.log_text.configure(**self._theme["textbox"])
+        if hasattr(self, "progress"):
+            self.progress.configure(**self._theme["progress"])
+        if hasattr(self, "main_scroll_frame"):
+            self.main_scroll_frame.configure(
+                scrollbar_button_color=palette["hover_bg"],
+                scrollbar_button_hover_color=palette["accent"],
             )
+        self._sync_runtime_chip()
 
         for attr in (
             "additional_colors_editor",
@@ -590,8 +745,144 @@ class ExportApp(tk.Tk if tk is not None else object):
             if widget is not None and hasattr(widget, "apply_palette"):
                 widget.apply_palette(palette)
 
+    def _register_theme_widget(self, role: str, widget: tk.Widget) -> tk.Widget:
+        self._themed_widgets.setdefault(role, []).append(widget)
+        return widget
+
+    def _header_label(self, parent: tk.Widget, text: str) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(parent, text=text, **self._theme["header_label"])
+        self._register_theme_widget("header_label", label)
+        return label
+
+    def _hero_label(self, parent: tk.Widget, text: str) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(parent, text=text, **self._theme["hero_label"])
+        self._register_theme_widget("hero_label", label)
+        return label
+
+    def _subheader_label(self, parent: tk.Widget, text: str | None = None, textvariable: tk.StringVar | None = None) -> ctk.CTkLabel:
+        kwargs: dict[str, object] = dict(self._theme["subheader_label"])
+        if text is not None:
+            kwargs["text"] = text
+        if textvariable is not None:
+            kwargs["textvariable"] = textvariable
+        label = ctk.CTkLabel(parent, **kwargs)
+        self._register_theme_widget("subheader_label", label)
+        return label
+
+    def _section_label(self, parent: tk.Widget, text: str) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(parent, text=text, **self._theme["section_label"])
+        self._register_theme_widget("section_label", label)
+        return label
+
+    def _field_label(self, parent: tk.Widget, text: str) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(parent, text=text, **self._theme["field_label"])
+        self._register_theme_widget("field_label", label)
+        return label
+
+    def _body_label(self, parent: tk.Widget, text: str) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(parent, text=text, **self._theme["body_label"])
+        self._register_theme_widget("body_label", label)
+        return label
+
+    def _secondary_button(self, parent: tk.Widget, text: str, command, width: int | None = None) -> ctk.CTkButton:
+        kwargs: dict[str, object] = {"text": text, "command": command, **self._theme["secondary_button"]}
+        if width is not None:
+            kwargs["width"] = width
+        button = ctk.CTkButton(parent, **kwargs)
+        self._register_theme_widget("secondary_button", button)
+        return button
+
+    def _primary_button(self, parent: tk.Widget, text: str, command, width: int | None = None) -> ctk.CTkButton:
+        kwargs: dict[str, object] = {"text": text, "command": command, **self._theme["primary_button"]}
+        if width is not None:
+            kwargs["width"] = width
+        button = ctk.CTkButton(parent, **kwargs)
+        self._register_theme_widget("primary_button", button)
+        return button
+
+    def _pill_label(
+        self,
+        parent: tk.Widget,
+        *,
+        text: str | None = None,
+        textvariable: tk.StringVar | None = None,
+        muted: bool = False,
+    ) -> ctk.CTkLabel:
+        role = "muted_pill_label" if muted else "pill_label"
+        kwargs: dict[str, object] = dict(self._theme[role])
+        if text is not None:
+            kwargs["text"] = text
+        if textvariable is not None:
+            kwargs["textvariable"] = textvariable
+        label = ctk.CTkLabel(parent, **kwargs)
+        self._register_theme_widget(role, label)
+        return label
+
+    def _divider(self, parent: tk.Widget, *, height: int = 1) -> ctk.CTkFrame:
+        frame = ctk.CTkFrame(parent, height=height, **self._theme["divider"])
+        self._register_theme_widget("divider", frame)
+        return frame
+
+    def _make_card_frame(self, parent: tk.Widget, *, padding: int = 0) -> ctk.CTkFrame:
+        frame = ctk.CTkFrame(parent, **self._theme["card_frame"])
+        self._register_theme_widget("card_frame", frame)
+        if padding > 0:
+            inner = ctk.CTkFrame(frame, **self._theme["sub_frame"])
+            self._register_theme_widget("sub_frame", inner)
+            inner.pack(fill="both", expand=True, padx=padding, pady=padding)
+            return inner
+        return frame
+
+    def _make_sub_frame(self, parent: tk.Widget) -> ctk.CTkFrame:
+        frame = ctk.CTkFrame(parent, **self._theme["sub_frame"])
+        self._register_theme_widget("sub_frame", frame)
+        return frame
+
+    def _register_entry_widget(self, widget: tk.Widget) -> None:
+        self._register_theme_widget("entry", widget)
+
+    def _register_combo_widget(self, widget: tk.Widget) -> None:
+        self._register_theme_widget("combo", widget)
+
+    def _register_checkbox_widget(self, widget: tk.Widget) -> None:
+        self._register_theme_widget("checkbox", widget)
+
     def _sync_app_theme_to_viewer_setting(self) -> None:
         self._apply_app_theme(self.theme_var.get())
+
+    def _on_theme_selected(self, selected_mode: str) -> None:
+        mode = str(selected_mode).strip().lower()
+        if mode not in {"light", "dark"}:
+            mode = "dark"
+        if self.theme_var.get().strip().lower() != mode:
+            self.theme_var.set(mode)
+        self._apply_app_theme(mode)
+
+    def _sync_runtime_chip(self) -> None:
+        if not hasattr(self, "runtime_chip_label"):
+            return
+        status = self.status_var.get().strip().lower()
+        if status.startswith("export running"):
+            text = "RUNNING"
+            fg = self._app_palette["accent"]
+            tc = self._app_palette.get("on_accent", "#ffffff")
+        elif status.startswith("export complete"):
+            text = "COMPLETE"
+            fg = "#1f8f5f"
+            tc = "#ffffff"
+        elif status.startswith("serving on"):
+            text = "SERVING"
+            fg = self._app_palette["accent_strong"]
+            tc = self._app_palette.get("on_accent", "#ffffff")
+        elif status.startswith("export failed"):
+            text = "FAILED"
+            fg = "#bf2f5e"
+            tc = "#ffffff"
+        else:
+            text = "READY"
+            fg = self._app_palette["hover_bg"]
+            tc = self._app_palette["text"]
+        self.runtime_chip_label.configure(text=text, fg_color=fg, text_color=tc)
 
     def _build_variables(self) -> None:
         self.h5ad_var = tk.StringVar()
@@ -629,67 +920,87 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.status_var = tk.StringVar(value="Ready")
 
     def _build_layout(self) -> None:
-        palette = self._app_palette
-        shell = ttk.Frame(self, style="Root.TFrame")
+        shell = ctk.CTkFrame(self, **self._theme["root_frame"])
+        self._register_theme_widget("root_frame", shell)
         shell.pack(fill="both", expand=True)
         shell.columnconfigure(0, weight=1)
         shell.rowconfigure(0, weight=1)
 
-        self.scroll_canvas = tk.Canvas(shell, background=palette["background"], highlightthickness=0, bd=0)
-        self.scroll_canvas.grid(row=0, column=0, sticky="nsew")
-        self.scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.scroll_canvas.yview)
-        self.scrollbar.grid(row=0, column=1, sticky="ns")
-        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        root = ttk.Frame(self.scroll_canvas, style="Root.TFrame", padding=16)
-        self._scroll_window = self.scroll_canvas.create_window((0, 0), window=root, anchor="nw")
-        root.bind("<Configure>", lambda _event: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
-        self.scroll_canvas.bind("<Configure>", self._on_canvas_configure)
-        self._bind_mousewheel_scroll()
-
+        root = ctk.CTkScrollableFrame(
+            shell,
+            **self._theme["root_frame"],
+            scrollbar_button_color=self._app_palette["hover_bg"],
+            scrollbar_button_hover_color=self._app_palette["accent"],
+        )
+        self.main_scroll_frame = root
+        self._register_theme_widget("root_frame", root)
+        root.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         root.columnconfigure(0, weight=3)
         root.columnconfigure(1, weight=2)
         root.rowconfigure(0, weight=1)
 
-        controls = ttk.Frame(root, style="Card.TFrame", padding=18)
+        controls = ctk.CTkFrame(root, **self._theme["card_frame"])
+        self._register_theme_widget("card_frame", controls)
         controls.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-        side = ttk.Frame(root, style="Card.TFrame", padding=18)
+        side = ctk.CTkFrame(root, **self._theme["card_frame"])
+        self._register_theme_widget("card_frame", side)
         side.grid(row=0, column=1, sticky="nsew")
+
+        controls_inner = ctk.CTkFrame(controls, **self._theme["sub_frame"])
+        self._register_theme_widget("sub_frame", controls_inner)
+        controls_inner.pack(fill="both", expand=True, padx=18, pady=18)
+        controls = controls_inner
+
+        side_inner = ctk.CTkFrame(side, **self._theme["sub_frame"])
+        self._register_theme_widget("sub_frame", side_inner)
+        side_inner.pack(fill="both", expand=True, padx=18, pady=18)
+        side = side_inner
 
         controls.columnconfigure(1, weight=1)
         side.columnconfigure(0, weight=1)
-        side.rowconfigure(4, weight=1)
+        side.rowconfigure(6, weight=1)
 
-        ttk.Label(controls, text="KaroSpaceBuilder", style="Header.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(
-            controls,
-            text="Export AnnData into a static KaroSpace viewer bundle with guided inputs and inspected field pickers.",
-            style="Subheader.TLabel",
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 18))
+        hero = ctk.CTkFrame(controls, **self._theme["hero_card"])
+        self._register_theme_widget("hero_card", hero)
+        hero.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        hero.columnconfigure(0, weight=1)
 
-        preset_row = ttk.Frame(controls, style="Card.TFrame")
-        preset_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        ttk.Button(preset_row, text="Default", style="Secondary.TButton", command=lambda: self._apply_preset("default")).pack(
-            side="left"
-        )
-        ttk.Label(preset_row, text="Default profile for fast setup.", style="Subheader.TLabel").pack(side="left", padx=(12, 0))
+        hero_inner = self._make_sub_frame(hero)
+        hero_inner.grid(row=0, column=0, sticky="ew", padx=14, pady=14)
+        hero_inner.columnconfigure(0, weight=1)
 
-        notebook = ttk.Notebook(controls)
-        notebook.grid(row=3, column=0, columnspan=3, sticky="nsew")
-        controls.rowconfigure(3, weight=1)
+        hero_left = self._make_sub_frame(hero_inner)
+        hero_left.grid(row=0, column=0, sticky="w")
+        self._section_label(hero_left, "DESKTOP BUILDER").pack(anchor="w")
+        self._hero_label(hero_left, "KaroSpaceBuilder").pack(anchor="w", pady=(2, 0))
+        self._subheader_label(
+            hero_left,
+            "Export AnnData into a static KaroSpace viewer bundle with guided inputs and inspected field pickers.",
+        ).pack(anchor="w", pady=(2, 0))
 
-        basic_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
-        colors_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
-        advanced_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
-        help_tab = ttk.Frame(notebook, style="Card.TFrame", padding=10)
-        notebook.add(basic_tab, text="Basic")
-        notebook.add(colors_tab, text="Colors & Genes")
-        notebook.add(advanced_tab, text="Advanced")
-        notebook.add(help_tab, text="Help")
+        self._divider(controls, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+
+        notebook = ctk.CTkTabview(controls, **self._theme["tabview"])
+        self._register_theme_widget("tabview", notebook)
+        notebook.grid(row=2, column=0, columnspan=3, sticky="nsew")
+        controls.rowconfigure(2, weight=1)
+
+        notebook.add("Basic")
+        notebook.add("Colors & Genes")
+        notebook.add("Advanced")
+        notebook.add("Help")
+        basic_tab = notebook.tab("Basic")
+        colors_tab = notebook.tab("Colors & Genes")
+        advanced_tab = notebook.tab("Advanced")
+        help_tab = notebook.tab("Help")
+        for tab in (basic_tab, colors_tab, advanced_tab, help_tab):
+            self._register_theme_widget("sub_frame", tab)
 
         basic_tab.columnconfigure(1, weight=1)
-        row = 0
+        self._section_label(basic_tab, "Input & Viewer Setup").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self._divider(basic_tab, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        row = 2
         row = self._path_field(basic_tab, row, "Input .h5ad", self.h5ad_var, choose_file=True)
         row = self._path_field(basic_tab, row, "Output directory", self.outdir_var, choose_file=False)
         row = self._option_row(
@@ -720,6 +1031,22 @@ class ExportApp(tk.Tk if tk is not None else object):
             widget=self._theme_dropdown(basic_tab),
             hint="KaroSpace viewer theme.",
         )
+        runtime_mode_row = self._make_sub_frame(basic_tab)
+        self.numba_jit_check = ctk.CTkCheckBox(
+            runtime_mode_row,
+            text="Performance mode (enable numba JIT)",
+            variable=self.numba_jit_var,
+            **self._theme["checkbox"],
+        )
+        self._register_checkbox_widget(self.numba_jit_check)
+        self.numba_jit_check.pack(side="left")
+        row = self._option_row(
+            basic_tab,
+            row,
+            "Runtime mode",
+            widget=runtime_mode_row,
+            hint="Faster on some datasets. If unstable in the desktop app, turn this off.",
+        )
         row = self._option_row(
             basic_tab,
             row,
@@ -734,11 +1061,11 @@ class ExportApp(tk.Tk if tk is not None else object):
             widget=self._entry(basic_tab, self.title_var),
             hint="Title shown in the exported HTML.",
         )
-        downsample_container = ttk.Frame(basic_tab, style="Card.TFrame")
-        ttk.Entry(downsample_container, textvariable=self.downsample_var, width=12).pack(side="left")
-        ttk.Label(downsample_container, text="cells per section (blank = all)", style="Body.TLabel").pack(
-            side="left", padx=(8, 0)
-        )
+        downsample_container = self._make_sub_frame(basic_tab)
+        downsample_entry = ctk.CTkEntry(downsample_container, textvariable=self.downsample_var, width=100, **self._theme["entry"])
+        self._register_entry_widget(downsample_entry)
+        downsample_entry.pack(side="left")
+        self._body_label(downsample_container, "cells per section (blank = all)").pack(side="left", padx=(8, 0))
         self._option_row(
             basic_tab,
             row,
@@ -748,62 +1075,80 @@ class ExportApp(tk.Tk if tk is not None else object):
         )
 
         colors_tab.columnconfigure(0, weight=1)
+        self._section_label(colors_tab, "Color Fields & Gene Sources").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._subheader_label(
+            colors_tab,
+            "Build color menus and gene features from inspected obs/var fields.",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+        self._divider(colors_tab, height=1).grid(row=2, column=0, sticky="ew", pady=(0, 10))
         self.additional_colors_editor = SearchableListEditor(
             colors_tab,
             label="additional_colors (obs columns)",
             height=6,
             help_text="These become color options in KaroSpace. Use Inspect to load obs columns.",
+            palette=self._app_palette,
         )
-        self.additional_colors_editor.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.additional_colors_editor.grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         self.groupby_editor = SearchableListEditor(
             colors_tab,
             label="groupby lists (marker/neighbor/interaction)",
             height=6,
             help_text="Used for marker_genes_groupby and optionally neighbor/interaction groupby.",
+            palette=self._app_palette,
         )
-        self.groupby_editor.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        self.groupby_editor.grid(row=4, column=0, sticky="ew", pady=(0, 12))
 
-        genes_card = ttk.Frame(colors_tab, style="Card.TFrame")
-        genes_card.grid(row=2, column=0, sticky="ew")
+        genes_card = ctk.CTkFrame(colors_tab, **self._theme["card_frame"])
+        self._register_theme_widget("card_frame", genes_card)
+        genes_card.grid(row=5, column=0, sticky="ew")
         genes_card.columnconfigure(0, weight=1)
-        ttk.Label(genes_card, text="Gene Selection", style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        self._genes_mode_row(genes_card).grid(row=1, column=0, sticky="ew")
-        ttk.Label(
-            genes_card,
-            text=(
+        genes_inner = self._make_sub_frame(genes_card)
+        genes_inner.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        genes_inner.columnconfigure(0, weight=1)
+        self._field_label(genes_inner, "Gene Selection").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._genes_mode_row(genes_inner).grid(row=1, column=0, sticky="ew")
+        self._subheader_label(
+            genes_inner,
+            (
                 "hvgs:N maps to use_hvgs=True/hvg_limit=N. top_mean/list_file/manual_list map to explicit genes list "
                 "with use_hvgs=False."
             ),
-            style="Subheader.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=(4, 8))
         self.manual_genes_editor = SearchableListEditor(
-            genes_card,
+            genes_inner,
             label="genes list (manual_list)",
             height=8,
             help_text="Search var_names and build the genes list with + Add / Remove.",
+            palette=self._app_palette,
         )
         self.manual_genes_editor.grid(row=3, column=0, sticky="ew")
 
-        selection_card = ttk.Frame(colors_tab, style="Card.TFrame")
-        selection_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        selection_card = ctk.CTkFrame(colors_tab, **self._theme["card_frame"])
+        self._register_theme_widget("card_frame", selection_card)
+        selection_card.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         selection_card.columnconfigure(0, weight=1)
-        self.selection_mode_check = ttk.Checkbutton(
-            selection_card,
+
+        selection_inner = self._make_sub_frame(selection_card)
+        selection_inner.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        selection_inner.columnconfigure(0, weight=1)
+        self.selection_mode_check = ctk.CTkCheckBox(
+            selection_inner,
             text="Enable tick selection mode (from Inspect H5AD)",
             variable=self.selection_mode_var,
+            **self._theme["checkbox"],
         )
+        self._register_checkbox_widget(self.selection_mode_check)
         self.selection_mode_check.grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            selection_card,
-            text=(
+        self._subheader_label(
+            selection_inner,
+            (
                 "When enabled, selected items below are used during export for additional colors, "
                 "groupby lists, and manual genes."
             ),
-            style="Subheader.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(4, 8))
 
-        self.selection_mode_content = ttk.Frame(selection_card, style="Card.TFrame")
+        self.selection_mode_content = self._make_sub_frame(selection_inner)
         self.selection_mode_content.grid(row=2, column=0, sticky="ew")
         self.selection_mode_content.columnconfigure(0, weight=1)
         self.selection_mode_content.columnconfigure(1, weight=1)
@@ -813,6 +1158,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             label="Tick additional_colors (obs)",
             height=7,
             help_text="Multi-select obs fields to include as additional viewer colors.",
+            palette=self._app_palette,
         )
         self.selection_additional_picker.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
@@ -821,6 +1167,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             label="Tick groupby lists (obs)",
             height=7,
             help_text="Multi-select obs columns for marker/neighbor/interaction groupby lists.",
+            palette=self._app_palette,
         )
         self.selection_groupby_picker.grid(row=0, column=1, sticky="ew")
 
@@ -829,49 +1176,52 @@ class ExportApp(tk.Tk if tk is not None else object):
             label="Tick genes (manual_list mode)",
             height=8,
             help_text="Multi-select genes from var_names. Used when genes mode is manual_list.",
+            palette=self._app_palette,
         )
         self.selection_genes_picker.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
-        selection_actions = ttk.Frame(self.selection_mode_content, style="Card.TFrame")
+        selection_actions = self._make_sub_frame(self.selection_mode_content)
         selection_actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        self.selection_apply_btn = ttk.Button(
+        self.selection_apply_btn = self._secondary_button(
             selection_actions,
-            text="Apply selections to inputs",
-            style="Secondary.TButton",
-            command=self._apply_tick_selections_to_inputs,
+            "Apply selections to inputs",
+            self._apply_tick_selections_to_inputs,
+            width=190,
         )
         self.selection_apply_btn.pack(side="left")
-        self.selection_sync_btn = ttk.Button(
+        self.selection_sync_btn = self._secondary_button(
             selection_actions,
-            text="Sync from current inputs",
-            style="Secondary.TButton",
-            command=self._load_inputs_into_tick_selection,
+            "Sync from current inputs",
+            self._load_inputs_into_tick_selection,
+            width=185,
         )
         self.selection_sync_btn.pack(side="left", padx=(8, 0))
 
         advanced_tab.columnconfigure(0, weight=1)
-        adv_header = ttk.Frame(advanced_tab, style="Card.TFrame")
-        adv_header.grid(row=0, column=0, sticky="ew")
-        self.advanced_toggle_btn = ttk.Button(
-            adv_header,
-            text="Show Advanced Options",
-            style="Secondary.TButton",
-            command=self._toggle_advanced,
-        )
+        self._section_label(advanced_tab, "Advanced Analytics").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._subheader_label(
+            advanced_tab,
+            "Fine tune marker, neighbor, interaction, and preview server behavior.",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+        self._divider(advanced_tab, height=1).grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        adv_header = self._make_sub_frame(advanced_tab)
+        adv_header.grid(row=3, column=0, sticky="ew")
+        self.advanced_toggle_btn = self._secondary_button(adv_header, "Show Advanced Options", self._toggle_advanced, width=190)
         self.advanced_toggle_btn.pack(anchor="w")
-        ttk.Label(
+        self._subheader_label(
             adv_header,
-            text="Analytics and rendering parameters from KaroSpace export_to_html.",
-            style="Subheader.TLabel",
+            "Analytics and rendering parameters from KaroSpace export_to_html.",
         ).pack(anchor="w", pady=(6, 0))
 
-        self.advanced_content = ttk.Frame(advanced_tab, style="Card.TFrame")
-        self.advanced_content.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        self.advanced_content = self._make_sub_frame(advanced_tab)
+        self.advanced_content.grid(row=4, column=0, sticky="ew", pady=(10, 0))
         self.advanced_content.columnconfigure(1, weight=1)
 
-        min_panel_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Entry(min_panel_row, textvariable=self.min_panel_size_var, width=10).pack(side="left")
-        ttk.Label(min_panel_row, text="px", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        min_panel_row = self._make_sub_frame(self.advanced_content)
+        min_panel_entry = ctk.CTkEntry(min_panel_row, textvariable=self.min_panel_size_var, width=90, **self._theme["entry"])
+        self._register_entry_widget(min_panel_entry)
+        min_panel_entry.pack(side="left")
+        self._body_label(min_panel_row, "px").pack(side="left", padx=(8, 0))
         self._option_row(
             self.advanced_content,
             0,
@@ -880,11 +1230,18 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Minimum section panel width in exported KaroSpace HTML.",
         )
 
-        spot_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Combobox(spot_row, textvariable=self.spot_size_var, values=["auto", "adaptive", "density"], width=12).pack(
-            side="left"
+        spot_row = self._make_sub_frame(self.advanced_content)
+        self.spot_size_combo = ctk.CTkComboBox(
+            spot_row,
+            variable=self.spot_size_var,
+            values=["auto", "adaptive", "density"],
+            width=120,
+            state="normal",
+            **self._theme["combo"],
         )
-        ttk.Label(spot_row, text="or numeric value", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        self._register_combo_widget(self.spot_size_combo)
+        self.spot_size_combo.pack(side="left")
+        self._body_label(spot_row, "or numeric value").pack(side="left", padx=(8, 0))
         self._option_row(
             self.advanced_content,
             2,
@@ -893,9 +1250,11 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Use auto/adaptive/density or a positive number.",
         )
 
-        marker_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Entry(marker_row, textvariable=self.marker_genes_top_n_var, width=10).pack(side="left")
-        ttk.Label(marker_row, text="top genes per group", style="Body.TLabel").pack(side="left", padx=(8, 0))
+        marker_row = self._make_sub_frame(self.advanced_content)
+        marker_top_n_entry = ctk.CTkEntry(marker_row, textvariable=self.marker_genes_top_n_var, width=90, **self._theme["entry"])
+        self._register_entry_widget(marker_top_n_entry)
+        marker_top_n_entry.pack(side="left")
+        self._body_label(marker_row, "top genes per group").pack(side="left", padx=(8, 0))
         self._option_row(
             self.advanced_content,
             4,
@@ -904,14 +1263,23 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Maps to marker_genes_top_n.",
         )
 
-        neighbor_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Checkbutton(neighbor_row, text="Auto neighbor groupby = [initial color]", variable=self.neighbor_auto_var).pack(
-            side="left"
+        neighbor_row = self._make_sub_frame(self.advanced_content)
+        self.neighbor_auto_check = ctk.CTkCheckBox(
+            neighbor_row,
+            text="Auto neighbor groupby = [initial color]",
+            variable=self.neighbor_auto_var,
+            **self._theme["checkbox"],
         )
-        ttk.Label(neighbor_row, text="Permutations", style="Body.TLabel").pack(side="left", padx=(12, 4))
-        ttk.Entry(neighbor_row, textvariable=self.neighbor_permutations_var, width=8).pack(side="left")
-        ttk.Label(neighbor_row, text="Seed", style="Body.TLabel").pack(side="left", padx=(12, 4))
-        ttk.Entry(neighbor_row, textvariable=self.neighbor_stats_seed_var, width=8).pack(side="left")
+        self._register_checkbox_widget(self.neighbor_auto_check)
+        self.neighbor_auto_check.pack(side="left")
+        self._body_label(neighbor_row, "Permutations").pack(side="left", padx=(12, 4))
+        neighbor_perm_entry = ctk.CTkEntry(neighbor_row, textvariable=self.neighbor_permutations_var, width=76, **self._theme["entry"])
+        self._register_entry_widget(neighbor_perm_entry)
+        neighbor_perm_entry.pack(side="left")
+        self._body_label(neighbor_row, "Seed").pack(side="left", padx=(12, 4))
+        neighbor_seed_entry = ctk.CTkEntry(neighbor_row, textvariable=self.neighbor_stats_seed_var, width=76, **self._theme["entry"])
+        self._register_entry_widget(neighbor_seed_entry)
+        neighbor_seed_entry.pack(side="left")
         self._option_row(
             self.advanced_content,
             6,
@@ -920,31 +1288,54 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Permutations accepts integer or 'auto'.",
         )
 
-        interaction_row_1 = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Checkbutton(
+        interaction_row_1 = self._make_sub_frame(self.advanced_content)
+        self.interaction_enabled_check = ctk.CTkCheckBox(
             interaction_row_1,
             text="Enable interaction markers (uses groupby list)",
             variable=self.interaction_markers_enabled_var,
-        ).pack(side="left")
+            **self._theme["checkbox"],
+        )
+        self._register_checkbox_widget(self.interaction_enabled_check)
+        self.interaction_enabled_check.pack(side="left")
         self._option_row(self.advanced_content, 8, "Interaction markers", widget=interaction_row_1)
 
-        interaction_row_2 = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Label(interaction_row_2, text="Top targets", style="Body.TLabel").pack(side="left")
-        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_top_targets_var, width=8).pack(
-            side="left", padx=(4, 10)
+        interaction_row_2 = self._make_sub_frame(self.advanced_content)
+        self._body_label(interaction_row_2, "Top targets").pack(side="left")
+        interaction_top_targets_entry = ctk.CTkEntry(
+            interaction_row_2,
+            textvariable=self.interaction_markers_top_targets_var,
+            width=70,
+            **self._theme["entry"],
         )
-        ttk.Label(interaction_row_2, text="Top genes", style="Body.TLabel").pack(side="left")
-        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_top_genes_var, width=8).pack(
-            side="left", padx=(4, 10)
+        self._register_entry_widget(interaction_top_targets_entry)
+        interaction_top_targets_entry.pack(side="left", padx=(4, 10))
+        self._body_label(interaction_row_2, "Top genes").pack(side="left")
+        interaction_top_genes_entry = ctk.CTkEntry(
+            interaction_row_2,
+            textvariable=self.interaction_markers_top_genes_var,
+            width=70,
+            **self._theme["entry"],
         )
-        ttk.Label(interaction_row_2, text="Min cells", style="Body.TLabel").pack(side="left")
-        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_min_cells_var, width=8).pack(
-            side="left", padx=(4, 10)
+        self._register_entry_widget(interaction_top_genes_entry)
+        interaction_top_genes_entry.pack(side="left", padx=(4, 10))
+        self._body_label(interaction_row_2, "Min cells").pack(side="left")
+        interaction_min_cells_entry = ctk.CTkEntry(
+            interaction_row_2,
+            textvariable=self.interaction_markers_min_cells_var,
+            width=70,
+            **self._theme["entry"],
         )
-        ttk.Label(interaction_row_2, text="Min neighbors", style="Body.TLabel").pack(side="left")
-        ttk.Entry(interaction_row_2, textvariable=self.interaction_markers_min_neighbors_var, width=8).pack(
-            side="left", padx=(4, 0)
+        self._register_entry_widget(interaction_min_cells_entry)
+        interaction_min_cells_entry.pack(side="left", padx=(4, 10))
+        self._body_label(interaction_row_2, "Min neighbors").pack(side="left")
+        interaction_min_neighbors_entry = ctk.CTkEntry(
+            interaction_row_2,
+            textvariable=self.interaction_markers_min_neighbors_var,
+            width=70,
+            **self._theme["entry"],
         )
+        self._register_entry_widget(interaction_min_neighbors_entry)
+        interaction_min_neighbors_entry.pack(side="left", padx=(4, 0))
         self._option_row(
             self.advanced_content,
             9,
@@ -953,28 +1344,17 @@ class ExportApp(tk.Tk if tk is not None else object):
             hint="Maps to interaction_markers_top_targets/top_genes/min_cells/min_neighbors.",
         )
 
-        runtime_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        self.numba_jit_check = ttk.Checkbutton(
-            runtime_row,
-            text="Performance mode (enable numba JIT)",
-            variable=self.numba_jit_var,
-        )
-        self.numba_jit_check.pack(side="left")
+        serve_row = self._make_sub_frame(self.advanced_content)
+        self.serve_check = ctk.CTkCheckBox(serve_row, text="Serve after export", variable=self.serve_var, **self._theme["checkbox"])
+        self._register_checkbox_widget(self.serve_check)
+        self.serve_check.pack(side="left")
+        self._body_label(serve_row, "Port").pack(side="left", padx=(12, 4))
+        serve_port_entry = ctk.CTkEntry(serve_row, textvariable=self.port_var, width=90, **self._theme["entry"])
+        self._register_entry_widget(serve_port_entry)
+        serve_port_entry.pack(side="left")
         self._option_row(
             self.advanced_content,
             11,
-            "Runtime mode",
-            widget=runtime_row,
-            hint="Faster on some datasets. If unstable in the desktop app, turn this off.",
-        )
-
-        serve_row = ttk.Frame(self.advanced_content, style="Card.TFrame")
-        ttk.Checkbutton(serve_row, text="Serve after export", variable=self.serve_var).pack(side="left")
-        ttk.Label(serve_row, text="Port", style="Body.TLabel").pack(side="left", padx=(12, 4))
-        ttk.Entry(serve_row, textvariable=self.port_var, width=10).pack(side="left")
-        self._option_row(
-            self.advanced_content,
-            13,
             "Preview server",
             widget=serve_row,
             hint="Optional local server to open the latest generated KaroSpace_*.html file.",
@@ -982,26 +1362,11 @@ class ExportApp(tk.Tk if tk is not None else object):
         self._set_advanced_visible(False)
 
         help_tab.columnconfigure(0, weight=1)
-        help_tab.rowconfigure(0, weight=1)
-        self.help_text = tk.Text(
-            help_tab,
-            wrap="word",
-            background=palette["input_bg"],
-            foreground=palette["text"],
-            relief="solid",
-            bd=1,
-            highlightthickness=1,
-            highlightbackground=palette["border"],
-            highlightcolor=palette["accent"],
-            insertbackground=palette["text"],
-            padx=10,
-            pady=10,
-            height=18,
-        )
-        self.help_text.grid(row=0, column=0, sticky="nsew")
-        help_scroll = ttk.Scrollbar(help_tab, orient="vertical", command=self.help_text.yview)
-        help_scroll.grid(row=0, column=1, sticky="ns")
-        self.help_text.configure(yscrollcommand=help_scroll.set)
+        help_tab.rowconfigure(2, weight=1)
+        self._section_label(help_tab, "Guide & Workflow").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._divider(help_tab, height=1).grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.help_text = ctk.CTkTextbox(help_tab, wrap="word", **self._theme["textbox"])
+        self.help_text.grid(row=2, column=0, sticky="nsew")
         self.help_text.insert(
             "1.0",
             "Basic tab\n"
@@ -1010,6 +1375,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Coordinates: auto/obsm/obs-centroid modes are converted to KaroSpace spatial input.\n"
             "- Section groupby: section split column used by load_spatial_data.\n"
             "- Initial color/theme/outline/title map directly to export_to_html.\n"
+            "- Runtime mode: optional numba JIT performance mode (can be less stable in frozen app).\n"
             "- Downsample: integer cells per section (blank keeps all).\n\n"
             "Colors & Genes tab\n"
             "- additional_colors: obs columns offered as categorical coloring fields.\n"
@@ -1025,170 +1391,193 @@ class ExportApp(tk.Tk if tk is not None else object):
             "- Min panel size, spot size, marker top N.\n"
             "- Neighbor stats permutations/seed and auto groupby mode.\n"
             "- Interaction markers limits and enable/disable toggle.\n"
-            "- Runtime mode: optional numba JIT performance mode (can be less stable in frozen app).\n"
             "- Serve after export starts a local preview server for the latest KaroSpace_*.html export.\n\n"
-            "Presets\n"
-            "- Default: balanced defaults.\n"
-            "\n"
             "Tip: click Inspect H5AD to load searchable dropdown choices from adata.obs and adata.var_names."
         )
         self.help_text.configure(state="disabled")
 
-        button_row = ttk.Frame(controls, style="Card.TFrame")
-        self.inspect_btn = ttk.Button(button_row, text="Inspect H5AD", style="Secondary.TButton", command=self._inspect_h5ad)
+        action_card = ctk.CTkFrame(controls, **self._theme["highlight_card"])
+        self._register_theme_widget("highlight_card", action_card)
+        action_card.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        button_row = self._make_sub_frame(action_card)
+        button_row.pack(fill="x", padx=12, pady=10)
+        self._section_label(button_row, "Actions").pack(side="left", padx=(0, 10))
+
+        self.inspect_btn = self._secondary_button(button_row, "Inspect Dataset", self._inspect_h5ad, width=150)
         self.inspect_btn.pack(side="left")
 
-        self.export_btn = ttk.Button(button_row, text="Export", style="Primary.TButton", command=self._on_export)
+        self.export_btn = self._primary_button(button_row, "Build Viewer", self._on_export, width=140)
         self.export_btn.pack(side="left", padx=(10, 0))
 
-        self.stop_server_btn = ttk.Button(button_row, text="Stop Server", style="Secondary.TButton", command=self._stop_server)
+        self.stop_server_btn = self._secondary_button(button_row, "Stop Preview", self._stop_server, width=130)
         self.stop_server_btn.pack(side="left", padx=(10, 0))
 
-        button_row.grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        runtime_top = self._make_sub_frame(side)
+        runtime_top.grid(row=0, column=0, sticky="ew")
+        self._section_label(runtime_top, "Runtime").pack(side="left")
+        self.runtime_chip_label = self._pill_label(runtime_top, text="READY", muted=True)
+        self.runtime_chip_label.pack(side="right")
+        self._header_label(side, "Activity").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self._subheader_label(side, textvariable=self.status_var).grid(row=2, column=0, sticky="w", pady=(2, 12))
 
-        ttk.Label(side, text="Runtime", style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(side, textvariable=self.status_var, style="Subheader.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 12))
+        self.progress = ctk.CTkProgressBar(side, mode="determinate", **self._theme["progress"])
+        self.progress.grid(row=3, column=0, sticky="ew")
+        self.progress.set(0.0)
+        self._subheader_label(side, "Live export progress").grid(row=4, column=0, sticky="w", pady=(6, 10))
 
-        self.progress = ttk.Progressbar(side, mode="determinate", maximum=100, value=0, style="Good.Horizontal.TProgressbar")
-        self.progress.grid(row=2, column=0, sticky="ew")
+        launch_card = ctk.CTkFrame(side, **self._theme["highlight_card"])
+        self._register_theme_widget("highlight_card", launch_card)
+        launch_card.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        launch_row = self._make_sub_frame(launch_card)
+        launch_row.pack(fill="x", padx=10, pady=10)
+        self._secondary_button(launch_row, "Open Output Folder", self._open_output_folder, width=160).pack(side="left")
+        self._secondary_button(launch_row, "Open Viewer", self._open_viewer, width=120).pack(side="left", padx=(10, 0))
 
-        launch_row = ttk.Frame(side, style="Card.TFrame")
-        launch_row.grid(row=3, column=0, sticky="ew", pady=(10, 10))
-        ttk.Button(launch_row, text="Open Output Folder", style="Secondary.TButton", command=self._open_output_folder).pack(
-            side="left"
-        )
-        ttk.Button(launch_row, text="Open Viewer", style="Secondary.TButton", command=self._open_viewer).pack(side="left", padx=(10, 0))
-
-        log_wrap = ttk.Frame(side, style="Card.TFrame")
-        log_wrap.grid(row=4, column=0, sticky="nsew")
+        log_card = ctk.CTkFrame(side, **self._theme["highlight_card"])
+        self._register_theme_widget("highlight_card", log_card)
+        log_card.grid(row=6, column=0, sticky="nsew")
+        log_wrap = self._make_sub_frame(log_card)
+        log_wrap.pack(fill="both", expand=True, padx=10, pady=10)
         log_wrap.columnconfigure(0, weight=1)
         log_wrap.rowconfigure(0, weight=1)
 
-        self.log_text = tk.Text(
-            log_wrap,
-            height=14,
-            wrap="word",
-            background=palette["input_bg"],
-            foreground=palette["text"],
-            insertbackground=palette["text"],
-            relief="solid",
-            bd=1,
-            highlightthickness=1,
-            highlightbackground=palette["border"],
-            highlightcolor=palette["accent"],
-            padx=10,
-            pady=10,
-            font=("Consolas", 10),
-        )
+        self.log_text = ctk.CTkTextbox(log_wrap, wrap="word", font=("Consolas", 10), **self._theme["textbox"])
         self.log_text.grid(row=0, column=0, sticky="nsew")
-        log_scroll = ttk.Scrollbar(log_wrap, orient="vertical", command=self.log_text.yview)
-        log_scroll.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=log_scroll.set)
         self.log_text.configure(state="disabled")
 
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
         self.neighbor_auto_var.trace_add("write", lambda *_: self._update_neighbor_groupby_state())
         self.selection_mode_var.trace_add("write", lambda *_: self._update_selection_mode_visibility())
-        self.theme_var.trace_add("write", lambda *_: self._sync_app_theme_to_viewer_setting())
+        self.status_var.trace_add("write", lambda *_: self._sync_runtime_chip())
         self._apply_preset("default", log=False)
         self._sync_app_theme_to_viewer_setting()
+        self._sync_runtime_chip()
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()
         self._set_selection_mode_visible(False)
 
     def _path_field(
         self,
-        parent: ttk.Frame,
+        parent: tk.Widget,
         row: int,
         label: str,
         variable: tk.StringVar,
         choose_file: bool,
         optional: bool = False,
     ) -> int:
-        ttk.Label(parent, text=label, style="FieldLabel.TLabel").grid(row=row, column=0, sticky="nw", pady=(0, 6), padx=(0, 12))
+        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 6), padx=(0, 12))
         entry = self._entry(parent, variable)
         entry.grid(row=row, column=1, sticky="ew", pady=(0, 6))
 
         if choose_file:
-            button = ttk.Button(
-                parent,
-                text="Browse",
-                style="Secondary.TButton",
-                command=lambda: self._choose_file(variable, optional=optional),
-            )
+            button = self._secondary_button(parent, "Browse", lambda: self._choose_file(variable, optional=optional), width=96)
         else:
-            button = ttk.Button(parent, text="Browse", style="Secondary.TButton", command=lambda: self._choose_dir(variable))
+            button = self._secondary_button(parent, "Browse", lambda: self._choose_dir(variable), width=96)
         button.grid(row=row, column=2, sticky="e", pady=(0, 6), padx=(10, 0))
         return row + 1
 
     def _option_row(
         self,
-        parent: ttk.Frame,
+        parent: tk.Widget,
         row: int,
         label: str,
         widget: tk.Widget,
         hint: str | None = None,
     ) -> int:
-        ttk.Label(parent, text=label, style="FieldLabel.TLabel").grid(row=row, column=0, sticky="nw", pady=(0, 2), padx=(0, 12))
+        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 2), padx=(0, 12))
         widget.grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 2))
         row += 1
         if hint:
-            ttk.Label(parent, text=hint, style="Subheader.TLabel").grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
+            self._subheader_label(parent, hint).grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
             row += 1
         return row
 
-    def _entry(self, parent: ttk.Frame, variable: tk.StringVar) -> ttk.Entry:
-        return ttk.Entry(parent, textvariable=variable)
+    def _entry(self, parent: tk.Widget, variable: tk.StringVar) -> ctk.CTkEntry:
+        entry = ctk.CTkEntry(parent, textvariable=variable, **self._theme["entry"])
+        self._register_entry_widget(entry)
+        return entry
 
-    def _coords_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
-        combo = ttk.Combobox(
+    def _coords_dropdown(self, parent: tk.Widget) -> ctk.CTkOptionMenu:
+        combo = ctk.CTkOptionMenu(
             parent,
-            textvariable=self.coords_var,
+            variable=self.coords_var,
             values=["auto", "obsm:spatial", "obs:centroid_x_y"],
-            state="readonly",
+            **self._theme["combo"],
         )
+        self._register_combo_widget(combo)
         return combo
 
-    def _groupby_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
-        self.groupby_combo = ttk.Combobox(parent, textvariable=self.section_groupby_var, state="normal")
+    def _groupby_dropdown(self, parent: tk.Widget) -> ctk.CTkComboBox:
+        self.groupby_combo = ctk.CTkComboBox(
+            parent,
+            variable=self.section_groupby_var,
+            values=[],
+            state="normal",
+            **self._theme["combo"],
+        )
+        self._register_combo_widget(self.groupby_combo)
         return self.groupby_combo
 
-    def _color_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
-        self.color_combo = ttk.Combobox(parent, textvariable=self.initial_color_var, state="normal")
+    def _color_dropdown(self, parent: tk.Widget) -> ctk.CTkComboBox:
+        self.color_combo = ctk.CTkComboBox(
+            parent,
+            variable=self.initial_color_var,
+            values=[],
+            state="normal",
+            **self._theme["combo"],
+        )
+        self._register_combo_widget(self.color_combo)
         return self.color_combo
 
-    def _outline_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
-        self.outline_combo = ttk.Combobox(parent, textvariable=self.outline_by_var, state="normal")
+    def _outline_dropdown(self, parent: tk.Widget) -> ctk.CTkComboBox:
+        self.outline_combo = ctk.CTkComboBox(
+            parent,
+            variable=self.outline_by_var,
+            values=[],
+            state="normal",
+            **self._theme["combo"],
+        )
+        self._register_combo_widget(self.outline_combo)
         return self.outline_combo
 
-    def _theme_dropdown(self, parent: ttk.Frame) -> ttk.Combobox:
-        combo = ttk.Combobox(parent, textvariable=self.theme_var, values=["light", "dark"], state="readonly")
+    def _theme_dropdown(self, parent: tk.Widget) -> ctk.CTkOptionMenu:
+        combo = ctk.CTkOptionMenu(
+            parent,
+            variable=self.theme_var,
+            values=["light", "dark"],
+            command=self._on_theme_selected,
+            **self._theme["combo"],
+        )
+        self._register_combo_widget(combo)
         return combo
 
-    def _genes_mode_row(self, parent: ttk.Frame) -> ttk.Frame:
-        wrap = ttk.Frame(parent, style="Card.TFrame")
+    def _genes_mode_row(self, parent: tk.Widget) -> ctk.CTkFrame:
+        wrap = self._make_sub_frame(parent)
 
-        self.genes_mode_combo = ttk.Combobox(
+        self.genes_mode_combo = ctk.CTkOptionMenu(
             wrap,
-            textvariable=self.genes_mode_var,
+            variable=self.genes_mode_var,
             values=["hvgs", "top_mean", "list_file", "manual_list"],
-            state="readonly",
-            width=12,
+            width=130,
+            **self._theme["combo"],
         )
+        self._register_combo_widget(self.genes_mode_combo)
         self.genes_mode_combo.pack(side="left")
 
-        self.genes_count_entry = ttk.Entry(wrap, textvariable=self.genes_count_var, width=10)
+        self.genes_count_entry = ctk.CTkEntry(wrap, textvariable=self.genes_count_var, width=92, **self._theme["entry"])
+        self._register_entry_widget(self.genes_count_entry)
         self.genes_count_entry.pack(side="left", padx=(10, 0))
 
-        self.genes_count_label = ttk.Label(wrap, text="N genes", style="Body.TLabel")
+        self.genes_count_label = self._body_label(wrap, "N genes")
         self.genes_count_label.pack(side="left", padx=(8, 0))
 
-        self.gene_list_entry = ttk.Entry(wrap, textvariable=self.gene_list_path_var, width=30)
-        self.gene_list_button = ttk.Button(
+        self.gene_list_entry = ctk.CTkEntry(wrap, textvariable=self.gene_list_path_var, width=260, **self._theme["entry"])
+        self._register_entry_widget(self.gene_list_entry)
+        self.gene_list_button = self._secondary_button(
             wrap,
-            text="Gene List",
-            style="Secondary.TButton",
-            command=lambda: self._choose_file(self.gene_list_path_var, optional=False),
+            "Gene List",
+            lambda: self._choose_file(self.gene_list_path_var, optional=False),
+            width=96,
         )
 
         return wrap
@@ -1269,34 +1658,6 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.advanced_content.grid_remove()
             self.advanced_toggle_btn.configure(text="Show Advanced Options")
 
-    def _on_canvas_configure(self, event) -> None:
-        if hasattr(self, "_scroll_window"):
-            self.scroll_canvas.itemconfigure(self._scroll_window, width=event.width)
-
-    def _bind_mousewheel_scroll(self) -> None:
-        self.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
-        self.bind_all("<Button-4>", self._on_mousewheel_linux_up, add="+")
-        self.bind_all("<Button-5>", self._on_mousewheel_linux_down, add="+")
-
-    def _on_mousewheel(self, event) -> None:
-        if not hasattr(self, "scroll_canvas"):
-            return
-        if sys.platform == "darwin":
-            delta = -1 * int(event.delta)
-        else:
-            delta = -1 * int(event.delta / 120) if event.delta else 0
-        if delta == 0:
-            return
-        self.scroll_canvas.yview_scroll(delta, "units")
-
-    def _on_mousewheel_linux_up(self, _event) -> None:
-        if hasattr(self, "scroll_canvas"):
-            self.scroll_canvas.yview_scroll(-1, "units")
-
-    def _on_mousewheel_linux_down(self, _event) -> None:
-        if hasattr(self, "scroll_canvas"):
-            self.scroll_canvas.yview_scroll(1, "units")
-
     @staticmethod
     def _merge_unique(*groups: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -1359,14 +1720,13 @@ class ExportApp(tk.Tk if tk is not None else object):
         self.neighbor_auto_var.set(True)
         self.neighbor_permutations_var.set("auto")
         self.interaction_markers_enabled_var.set(False)
-        self.status_var.set("Preset loaded: Default")
-        label = "Default"
+        self.status_var.set("Ready")
 
         self._update_genes_mode_visibility()
         self._update_neighbor_groupby_state()
         self._load_inputs_into_tick_selection(log=False)
         if log:
-            self._log(f"Applied preset: {label}")
+            self._log("Applied default input values.")
 
     def _choose_file(self, variable: tk.StringVar, optional: bool = False) -> None:
         initial_dir = str(Path(variable.get()).expanduser().parent) if variable.get() else str(Path.cwd())
@@ -2115,10 +2475,7 @@ class ExportApp(tk.Tk if tk is not None else object):
             self.selection_sync_btn,
         ]
         for widget in widgets:
-            if busy:
-                widget.state(["disabled"])
-            else:
-                widget.state(["!disabled"])
+            widget.configure(state="disabled" if busy else "normal")
         self.additional_colors_editor.set_enabled(not busy)
         self.groupby_editor.set_enabled(not busy)
         self.manual_genes_editor.set_enabled(not busy)
@@ -2142,7 +2499,7 @@ class ExportApp(tk.Tk if tk is not None else object):
 
     def _set_progress(self, value: object, stage: str | None = None) -> None:
         percent = self._coerce_progress_value(value)
-        self.progress.configure(value=percent)
+        self.progress.set(percent / 100.0)
         if stage:
             self.status_var.set(f"Export running... {percent}% | {stage}")
 
@@ -2462,9 +2819,6 @@ class ExportApp(tk.Tk if tk is not None else object):
             self._log(f"Open path failed: {exc}")
 
     def _on_close(self) -> None:
-        self.unbind_all("<MouseWheel>")
-        self.unbind_all("<Button-4>")
-        self.unbind_all("<Button-5>")
         self._stop_server()
         self.destroy()
 
