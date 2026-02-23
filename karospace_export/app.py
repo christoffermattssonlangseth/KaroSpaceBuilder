@@ -47,16 +47,17 @@ _KAROSPACE_LIGHT_PALETTE = {
     "light_orange": _KI_COLORS["light_orange"],
     "light_blue": _KI_COLORS["light_blue"],
     "plum": _KI_COLORS["plum"],
-    "background": "#f5f5f5",
-    "text": "#1a1a1a",
+    "background": "#f0f1f4",
+    "text": "#1a1d23",
     "panel_bg": "#ffffff",
-    "border": "#e0e0e0",
-    "input_bg": "#ffffff",
-    "muted": "#666666",
-    "hover_bg": "#f0f0f0",
+    "border": "#d8dbe1",
+    "input_bg": "#f8f9fb",
+    "muted": "#6b7280",
+    "hover_bg": "#e6e8ed",
     "accent": _KI_COLORS["plum"],
     "accent_strong": _KI_COLORS["plum_dark"],
     "on_accent": "#ffffff",
+    "hero_bg": "#faf7f9",
 }
 
 _KAROSPACE_DARK_PALETTE = {
@@ -65,16 +66,17 @@ _KAROSPACE_DARK_PALETTE = {
     "light_orange": _KI_COLORS["light_orange"],
     "light_blue": _KI_COLORS["light_blue"],
     "plum": _KI_COLORS["plum"],
-    "background": "#171717",
-    "text": "#e9e9e9",
-    "panel_bg": "#222222",
-    "border": "#3a3a3a",
-    "input_bg": "#2a2a2a",
-    "muted": "#a0a0a0",
-    "hover_bg": "#303030",
+    "background": "#121316",
+    "text": "#e8eaef",
+    "panel_bg": "#1c1d22",
+    "border": "#2e3038",
+    "input_bg": "#24262c",
+    "muted": "#9ca3af",
+    "hover_bg": "#282a31",
     "accent": _KI_COLORS["orange"],
     "accent_strong": _KI_COLORS["plum"],
     "on_accent": "#1a1a1a",
+    "hero_bg": "#1e1a1c",
 }
 
 
@@ -86,61 +88,77 @@ def _palette_for_mode(mode: str) -> dict[str, str]:
     )
 
 
+def _ui_font() -> str:
+    """Return the preferred UI font family for the current platform."""
+    if sys.platform == "darwin":
+        return "Helvetica Neue"
+    return "Segoe UI"
+
+
+def _mono_font() -> str:
+    """Return the preferred monospace font family for the current platform."""
+    if sys.platform == "darwin":
+        return "Menlo"
+    return "Consolas"
+
+
 def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
+    ui = _ui_font()
+    mono = _mono_font()
     return {
         "root": {"fg_color": palette["background"]},
         "root_frame": {"fg_color": palette["background"], "corner_radius": 0},
         "card_frame": {
             "fg_color": palette["panel_bg"],
-            "corner_radius": 14,
+            "corner_radius": 16,
             "border_width": 1,
             "border_color": palette["border"],
         },
         "hero_card": {
-            "fg_color": palette["panel_bg"],
-            "corner_radius": 18,
-            "border_width": 1,
+            "fg_color": palette.get("hero_bg", palette["panel_bg"]),
+            "corner_radius": 20,
+            "border_width": 2,
             "border_color": palette["accent"],
         },
         "highlight_card": {
             "fg_color": palette["panel_bg"],
-            "corner_radius": 12,
+            "corner_radius": 14,
             "border_width": 1,
             "border_color": palette["accent_strong"],
         },
         "sub_frame": {"fg_color": "transparent", "corner_radius": 0},
         "section_label": {
-            "font": ("Segoe UI", 10, "bold"),
+            "font": (ui, 10, "bold"),
             "text_color": palette["accent"],
             "fg_color": "transparent",
             "anchor": "w",
         },
         "hero_label": {
-            "font": ("Segoe UI", 32, "bold"),
+            "font": (ui, 30, "bold"),
             "text_color": palette["text"],
             "fg_color": "transparent",
             "anchor": "w",
         },
         "header_label": {
-            "font": ("Segoe UI", 20, "bold"),
+            "font": (ui, 18, "bold"),
             "text_color": palette["text"],
             "fg_color": "transparent",
             "anchor": "w",
         },
         "subheader_label": {
-            "font": ("Segoe UI", 11),
+            "font": (ui, 11),
             "text_color": palette["muted"],
             "fg_color": "transparent",
             "anchor": "w",
         },
         "field_label": {
-            "font": ("Segoe UI", 11, "bold"),
+            "font": (ui, 11, "bold"),
             "text_color": palette["text"],
             "fg_color": "transparent",
             "anchor": "w",
         },
         "body_label": {
-            "font": ("Segoe UI", 10),
+            "font": (ui, 10),
             "text_color": palette["text"],
             "fg_color": "transparent",
             "anchor": "w",
@@ -150,34 +168,34 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "hover_color": palette["accent_strong"],
             "text_color": palette.get("on_accent", "#ffffff"),
             "corner_radius": 12,
-            "font": ("Segoe UI", 11, "bold"),
-            "height": 38,
+            "font": (ui, 12, "bold"),
+            "height": 42,
             "border_width": 0,
         },
         "secondary_button": {
             "fg_color": palette["input_bg"],
             "hover_color": palette["hover_bg"],
             "text_color": palette["text"],
-            "corner_radius": 12,
-            "font": ("Segoe UI", 10),
+            "corner_radius": 10,
+            "font": (ui, 10),
             "height": 36,
             "border_width": 1,
             "border_color": palette["border"],
         },
         "pill_label": {
-            "font": ("Segoe UI", 9, "bold"),
+            "font": (ui, 9, "bold"),
             "text_color": palette.get("on_accent", "#ffffff"),
             "fg_color": palette["accent"],
             "corner_radius": 999,
-            "padx": 10,
+            "padx": 12,
             "pady": 4,
         },
         "muted_pill_label": {
-            "font": ("Segoe UI", 9, "bold"),
+            "font": (ui, 9, "bold"),
             "text_color": palette["text"],
             "fg_color": palette["hover_bg"],
             "corner_radius": 999,
-            "padx": 10,
+            "padx": 12,
             "pady": 4,
         },
         "entry": {
@@ -185,7 +203,10 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "text_color": palette["text"],
             "placeholder_text_color": palette["muted"],
             "border_color": palette["border"],
+            "border_width": 1,
             "corner_radius": 10,
+            "height": 36,
+            "font": (ui, 11),
         },
         "combo": {
             "fg_color": palette["input_bg"],
@@ -196,6 +217,7 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "dropdown_text_color": palette["text"],
             "dropdown_hover_color": palette["hover_bg"],
             "corner_radius": 10,
+            "font": (ui, 11),
         },
         "checkbox": {
             "fg_color": palette["accent"],
@@ -203,7 +225,8 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "checkmark_color": palette.get("on_accent", "#ffffff"),
             "text_color": palette["text"],
             "border_color": palette["border"],
-            "font": ("Segoe UI", 10),
+            "font": (ui, 10),
+            "corner_radius": 6,
         },
         "tabview": {
             "fg_color": palette["panel_bg"],
@@ -213,7 +236,7 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "segmented_button_unselected_color": palette["hover_bg"],
             "segmented_button_unselected_hover_color": palette["border"],
             "text_color": palette["text"],
-            "corner_radius": 12,
+            "corner_radius": 14,
             "border_width": 0,
             "border_color": palette["border"],
         },
@@ -227,6 +250,7 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "border_color": palette["border"],
             "corner_radius": 10,
             "border_width": 1,
+            "font": (mono, 10),
             "scrollbar_button_color": palette["hover_bg"],
             "scrollbar_button_hover_color": palette["accent"],
         },
@@ -235,7 +259,7 @@ def _ctk_theme_config(palette: dict[str, str]) -> dict[str, dict[str, object]]:
             "progress_color": palette["accent"],
             "border_color": palette["border"],
             "corner_radius": 10,
-            "height": 14,
+            "height": 18,
         },
     }
 
@@ -309,10 +333,10 @@ class SearchableListEditor(_CTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            relief="solid",
-            bd=1,
+            relief="flat",
+            bd=0,
             highlightthickness=1,
-            font=("Segoe UI", 10),
+            font=(_ui_font(), 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
         self.scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
@@ -486,10 +510,10 @@ class SearchableMultiSelectEditor(_CTK_FRAME_BASE):
             height=height,
             selectmode="extended",
             activestyle="none",
-            relief="solid",
-            bd=1,
+            relief="flat",
+            bd=0,
             highlightthickness=1,
-            font=("Segoe UI", 10),
+            font=(_ui_font(), 10),
         )
         self.listbox.grid(row=0, column=0, sticky="ew")
         self.listbox.bind("<<ListboxSelect>>", lambda _event: self._capture_visible_selection())
@@ -674,8 +698,8 @@ class ExportApp(ctk.CTk if ctk is not None else object):
     def __init__(self) -> None:
         super().__init__()
         self.title("KaroSpaceBuilder")
-        self.geometry("1180x760")
-        self.minsize(1024, 700)
+        self.geometry("1280x820")
+        self.minsize(1060, 720)
 
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._export_thread: threading.Thread | None = None
@@ -934,14 +958,14 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         )
         self.main_scroll_frame = root
         self._register_theme_widget("root_frame", root)
-        root.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        root.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
         root.columnconfigure(0, weight=3)
         root.columnconfigure(1, weight=2)
         root.rowconfigure(0, weight=1)
 
         controls = ctk.CTkFrame(root, **self._theme["card_frame"])
         self._register_theme_widget("card_frame", controls)
-        controls.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        controls.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
 
         side = ctk.CTkFrame(root, **self._theme["card_frame"])
         self._register_theme_widget("card_frame", side)
@@ -949,12 +973,12 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
         controls_inner = ctk.CTkFrame(controls, **self._theme["sub_frame"])
         self._register_theme_widget("sub_frame", controls_inner)
-        controls_inner.pack(fill="both", expand=True, padx=18, pady=18)
+        controls_inner.pack(fill="both", expand=True, padx=22, pady=22)
         controls = controls_inner
 
         side_inner = ctk.CTkFrame(side, **self._theme["sub_frame"])
         self._register_theme_widget("sub_frame", side_inner)
-        side_inner.pack(fill="both", expand=True, padx=18, pady=18)
+        side_inner.pack(fill="both", expand=True, padx=22, pady=22)
         side = side_inner
 
         controls.columnconfigure(1, weight=1)
@@ -963,23 +987,23 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
         hero = ctk.CTkFrame(controls, **self._theme["hero_card"])
         self._register_theme_widget("hero_card", hero)
-        hero.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        hero.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 16))
         hero.columnconfigure(0, weight=1)
 
         hero_inner = self._make_sub_frame(hero)
-        hero_inner.grid(row=0, column=0, sticky="ew", padx=14, pady=14)
+        hero_inner.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
         hero_inner.columnconfigure(0, weight=1)
 
         hero_left = self._make_sub_frame(hero_inner)
         hero_left.grid(row=0, column=0, sticky="w")
         self._section_label(hero_left, "DESKTOP BUILDER").pack(anchor="w")
-        self._hero_label(hero_left, "KaroSpaceBuilder").pack(anchor="w", pady=(2, 0))
+        self._hero_label(hero_left, "KaroSpaceBuilder").pack(anchor="w", pady=(4, 0))
         self._subheader_label(
             hero_left,
             "Export AnnData into a static KaroSpace viewer bundle with guided inputs and inspected field pickers.",
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
-        self._divider(controls, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        self._divider(controls, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 14))
 
         notebook = ctk.CTkTabview(controls, **self._theme["tabview"])
         self._register_theme_widget("tabview", notebook)
@@ -998,8 +1022,8 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             self._register_theme_widget("sub_frame", tab)
 
         basic_tab.columnconfigure(1, weight=1)
-        self._section_label(basic_tab, "Input & Viewer Setup").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        self._divider(basic_tab, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        self._section_label(basic_tab, "INPUT & VIEWER SETUP").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self._divider(basic_tab, height=1).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
         row = 2
         row = self._path_field(basic_tab, row, "Input .h5ad", self.h5ad_var, choose_file=True)
         row = self._path_field(basic_tab, row, "Output directory", self.outdir_var, choose_file=False)
@@ -1075,7 +1099,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         )
 
         colors_tab.columnconfigure(0, weight=1)
-        self._section_label(colors_tab, "Color Fields & Gene Sources").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._section_label(colors_tab, "COLOR FIELDS & GENE SOURCES").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self._subheader_label(
             colors_tab,
             "Build color menus and gene features from inspected obs/var fields.",
@@ -1198,7 +1222,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         self.selection_sync_btn.pack(side="left", padx=(8, 0))
 
         advanced_tab.columnconfigure(0, weight=1)
-        self._section_label(advanced_tab, "Advanced Analytics").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._section_label(advanced_tab, "ADVANCED ANALYTICS").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self._subheader_label(
             advanced_tab,
             "Fine tune marker, neighbor, interaction, and preview server behavior.",
@@ -1363,7 +1387,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
         help_tab.columnconfigure(0, weight=1)
         help_tab.rowconfigure(2, weight=1)
-        self._section_label(help_tab, "Guide & Workflow").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._section_label(help_tab, "GUIDE & WORKFLOW").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self._divider(help_tab, height=1).grid(row=1, column=0, sticky="ew", pady=(0, 10))
         self.help_text = ctk.CTkTextbox(help_tab, wrap="word", **self._theme["textbox"])
         self.help_text.grid(row=2, column=0, sticky="nsew")
@@ -1398,51 +1422,52 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
         action_card = ctk.CTkFrame(controls, **self._theme["highlight_card"])
         self._register_theme_widget("highlight_card", action_card)
-        action_card.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        action_card.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(16, 0))
         button_row = self._make_sub_frame(action_card)
-        button_row.pack(fill="x", padx=12, pady=10)
-        self._section_label(button_row, "Actions").pack(side="left", padx=(0, 10))
+        button_row.pack(fill="x", padx=14, pady=12)
+        self._section_label(button_row, "ACTIONS").pack(side="left", padx=(0, 14))
 
-        self.inspect_btn = self._secondary_button(button_row, "Inspect Dataset", self._inspect_h5ad, width=150)
+        self.inspect_btn = self._secondary_button(button_row, "Inspect Dataset", self._inspect_h5ad, width=155)
         self.inspect_btn.pack(side="left")
 
-        self.export_btn = self._primary_button(button_row, "Build Viewer", self._on_export, width=140)
-        self.export_btn.pack(side="left", padx=(10, 0))
+        self.export_btn = self._primary_button(button_row, "Build Viewer", self._on_export, width=150)
+        self.export_btn.pack(side="left", padx=(12, 0))
 
-        self.stop_server_btn = self._secondary_button(button_row, "Stop Preview", self._stop_server, width=130)
-        self.stop_server_btn.pack(side="left", padx=(10, 0))
+        self.stop_server_btn = self._secondary_button(button_row, "Stop Preview", self._stop_server, width=135)
+        self.stop_server_btn.pack(side="left", padx=(12, 0))
 
         runtime_top = self._make_sub_frame(side)
         runtime_top.grid(row=0, column=0, sticky="ew")
-        self._section_label(runtime_top, "Runtime").pack(side="left")
+        self._section_label(runtime_top, "RUNTIME").pack(side="left")
         self.runtime_chip_label = self._pill_label(runtime_top, text="READY", muted=True)
         self.runtime_chip_label.pack(side="right")
-        self._header_label(side, "Activity").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self._subheader_label(side, textvariable=self.status_var).grid(row=2, column=0, sticky="w", pady=(2, 12))
+        self._header_label(side, "Activity").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self._subheader_label(side, textvariable=self.status_var).grid(row=2, column=0, sticky="w", pady=(2, 14))
 
         self.progress = ctk.CTkProgressBar(side, mode="determinate", **self._theme["progress"])
         self.progress.grid(row=3, column=0, sticky="ew")
         self.progress.set(0.0)
-        self._subheader_label(side, "Live export progress").grid(row=4, column=0, sticky="w", pady=(6, 10))
+        self._subheader_label(side, "Live export progress").grid(row=4, column=0, sticky="w", pady=(6, 12))
 
         launch_card = ctk.CTkFrame(side, **self._theme["highlight_card"])
         self._register_theme_widget("highlight_card", launch_card)
-        launch_card.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        launch_card.grid(row=5, column=0, sticky="ew", pady=(0, 12))
         launch_row = self._make_sub_frame(launch_card)
-        launch_row.pack(fill="x", padx=10, pady=10)
-        self._secondary_button(launch_row, "Open Output Folder", self._open_output_folder, width=160).pack(side="left")
-        self._secondary_button(launch_row, "Open Viewer", self._open_viewer, width=120).pack(side="left", padx=(10, 0))
+        launch_row.pack(fill="x", padx=12, pady=12)
+        self._secondary_button(launch_row, "Open Output Folder", self._open_output_folder, width=165).pack(side="left")
+        self._secondary_button(launch_row, "Open Viewer", self._open_viewer, width=125).pack(side="left", padx=(10, 0))
 
         log_card = ctk.CTkFrame(side, **self._theme["highlight_card"])
         self._register_theme_widget("highlight_card", log_card)
         log_card.grid(row=6, column=0, sticky="nsew")
         log_wrap = self._make_sub_frame(log_card)
-        log_wrap.pack(fill="both", expand=True, padx=10, pady=10)
+        log_wrap.pack(fill="both", expand=True, padx=12, pady=12)
         log_wrap.columnconfigure(0, weight=1)
-        log_wrap.rowconfigure(0, weight=1)
+        log_wrap.rowconfigure(1, weight=1)
 
-        self.log_text = ctk.CTkTextbox(log_wrap, wrap="word", font=("Consolas", 10), **self._theme["textbox"])
-        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self._section_label(log_wrap, "EVENT LOG").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.log_text = ctk.CTkTextbox(log_wrap, wrap="word", **self._theme["textbox"])
+        self.log_text.grid(row=1, column=0, sticky="nsew")
         self.log_text.configure(state="disabled")
 
         self.genes_mode_var.trace_add("write", lambda *_: self._update_genes_mode_visibility())
@@ -1465,15 +1490,15 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         choose_file: bool,
         optional: bool = False,
     ) -> int:
-        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 6), padx=(0, 12))
+        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 8), padx=(0, 14))
         entry = self._entry(parent, variable)
-        entry.grid(row=row, column=1, sticky="ew", pady=(0, 6))
+        entry.grid(row=row, column=1, sticky="ew", pady=(0, 8))
 
         if choose_file:
             button = self._secondary_button(parent, "Browse", lambda: self._choose_file(variable, optional=optional), width=96)
         else:
             button = self._secondary_button(parent, "Browse", lambda: self._choose_dir(variable), width=96)
-        button.grid(row=row, column=2, sticky="e", pady=(0, 6), padx=(10, 0))
+        button.grid(row=row, column=2, sticky="e", pady=(0, 8), padx=(10, 0))
         return row + 1
 
     def _option_row(
@@ -1484,11 +1509,11 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         widget: tk.Widget,
         hint: str | None = None,
     ) -> int:
-        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 2), padx=(0, 12))
-        widget.grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 2))
+        self._field_label(parent, label).grid(row=row, column=0, sticky="nw", pady=(0, 4), padx=(0, 14))
+        widget.grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 4))
         row += 1
         if hint:
-            self._subheader_label(parent, hint).grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 8))
+            self._subheader_label(parent, hint).grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 10))
             row += 1
         return row
 
