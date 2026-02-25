@@ -182,6 +182,7 @@ jobs:
             exit 1
           fi
 
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "MACOS_CODESIGN_IDENTITY=$resolved_identity" >> "$GITHUB_ENV"
           echo "MACOS_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
 
@@ -190,7 +191,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          codesign --force --deep --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" dist/KaroSpaceBuilder.app
+          while IFS= read -r -d '' file_path; do
+            if file "$file_path" | grep -q "Mach-O"; then
+              codesign --force --timestamp --options runtime \
+                --keychain "$MACOS_SIGNING_KEYCHAIN" \
+                --sign "$MACOS_CODESIGN_IDENTITY" \
+                "$file_path"
+            fi
+          done < <(find dist/KaroSpaceBuilder.app -type f -print0)
+
+          # Sign app bundle last so nested-code hashes are frozen.
+          codesign --force --timestamp --options runtime \
+            --keychain "$MACOS_SIGNING_KEYCHAIN" \
+            --sign "$MACOS_CODESIGN_IDENTITY" \
+            dist/KaroSpaceBuilder.app
+
           codesign --verify --deep --strict --verbose=2 dist/KaroSpaceBuilder.app
 
       - name: Notarize and staple macOS app
@@ -203,7 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           NOTARY_ZIP="$RUNNER_TEMP/${{ matrix.zip_name }}"
-          ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app "$NOTARY_ZIP"
+          ditto -c -k --keepParent dist/KaroSpaceBuilder.app "$NOTARY_ZIP"
           xcrun notarytool submit "$NOTARY_ZIP" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
@@ -211,6 +226,8 @@ jobs:
             --wait
           xcrun stapler staple dist/KaroSpaceBuilder.app
           xcrun stapler validate dist/KaroSpaceBuilder.app
+          codesign --verify --deep --strict --verbose=2 dist/KaroSpaceBuilder.app
+          spctl --assess --type execute --verbose=4 dist/KaroSpaceBuilder.app
 
       - name: Package macOS app
         if: startsWith(matrix.target, 'macos')
@@ -221,7 +238,20 @@ jobs:
           if [[ "${MACOS_SIGNING_ENABLED:-false}" != "true" ]]; then
             echo "Packaging unsigned macOS app (signing secrets not configured)."
           fi
-          ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app release/${{ matrix.zip_name }}
+          ditto -c -k --keepParent dist/KaroSpaceBuilder.app release/${{ matrix.zip_name }}
+
+      - name: Verify packaged macOS zip
+        if: startsWith(matrix.target, 'macos') && env.MACOS_SIGNING_ENABLED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$RUNNER_TEMP/packaged-macos-verify"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          ditto -x -k "release/${{ matrix.zip_name }}" "$TEST_DIR"
+          codesign --verify --deep --strict --verbose=2 "$TEST_DIR/KaroSpaceBuilder.app"
+          spctl --assess --type execute --verbose=4 "$TEST_DIR/KaroSpaceBuilder.app"
+          xcrun stapler validate "$TEST_DIR/KaroSpaceBuilder.app"
 
       - name: Package Windows app
         if: matrix.target == 'windows'
