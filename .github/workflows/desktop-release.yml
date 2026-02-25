@@ -202,11 +202,13 @@ jobs:
 
           # Sign app bundle last so nested-code hashes are frozen.
           codesign --force --timestamp --options runtime \
+            --entitlements packaging/macos-app.entitlements \
             --keychain "$MACOS_SIGNING_KEYCHAIN" \
             --sign "$MACOS_CODESIGN_IDENTITY" \
             dist/KaroSpaceBuilder.app
 
           codesign --verify --deep --strict --verbose=2 dist/KaroSpaceBuilder.app
+          codesign -d --entitlements - dist/KaroSpaceBuilder.app
 
       - name: Notarize and staple macOS app
         if: startsWith(matrix.target, 'macos') && env.MACOS_SIGNING_ENABLED == 'true'
