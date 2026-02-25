@@ -122,18 +122,23 @@ Outputs:
 The release workflow can codesign and notarize macOS builds so they open without
 Gatekeeper "unidentified developer" warnings.
 
-Add these GitHub repository secrets:
+Required GitHub repository secrets:
 
 - `MACOS_CERT_P12_BASE64`: Base64 of your exported **Developer ID Application** `.p12` certificate.
 - `MACOS_CERT_PASSWORD`: Password used when exporting that `.p12`.
-- `MACOS_CERT_NAME`: Exact signing identity, for example
-  `Developer ID Application: Your Name (TEAMID1234)`.
 - `APPLE_ID`: Apple ID email used for notarization.
 - `APPLE_APP_SPECIFIC_PASSWORD`: App-specific password for that Apple ID.
 - `APPLE_TEAM_ID`: Your Apple Developer Team ID.
 
-If any of these are missing, the workflow still produces the macOS zip, but it
-is packaged unsigned/unnotarized.
+Optional:
+
+- `MACOS_CERT_NAME`: Exact signing identity to force, for example
+  `Developer ID Application: Your Name (TEAMID1234)`.
+  If omitted (or if it does not match), the workflow auto-detects the imported
+  Developer ID Application identity from keychain.
+
+If any required secrets are missing, the workflow still produces the macOS zip,
+but it is packaged unsigned/unnotarized.
 
 ## Troubleshooting
 

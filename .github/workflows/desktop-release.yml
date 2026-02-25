@@ -132,7 +132,6 @@ jobs:
           required=(
             MACOS_CERT_P12_BASE64
             MACOS_CERT_PASSWORD
-            MACOS_CERT_NAME
             APPLE_ID
             APPLE_APP_SPECIFIC_PASSWORD
             APPLE_TEAM_ID
@@ -164,16 +163,34 @@ jobs:
           existing_keychains="$(security list-keychains -d user | sed 's/^[[:space:]]*//' | tr -d '"')"
           security list-keychains -d user -s "$KEYCHAIN_PATH" $existing_keychains
 
+          resolved_identity=""
+          if [[ -n "${MACOS_CERT_NAME:-}" ]]; then
+            if security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F "\"$MACOS_CERT_NAME\"" >/dev/null; then
+              resolved_identity="$MACOS_CERT_NAME"
+            else
+              echo "Provided MACOS_CERT_NAME not found in keychain; auto-detecting Developer ID Application identity."
+            fi
+          fi
+
+          if [[ -z "$resolved_identity" ]]; then
+            resolved_identity="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          fi
+
+          if [[ -z "$resolved_identity" ]]; then
+            echo "Unable to find a Developer ID Application identity in the imported keychain." >&2
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+
+          echo "MACOS_CODESIGN_IDENTITY=$resolved_identity" >> "$GITHUB_ENV"
           echo "MACOS_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Codesign macOS app
         if: startsWith(matrix.target, 'macos') && env.MACOS_SIGNING_ENABLED == 'true'
         shell: bash
-        env:
-          MACOS_CERT_NAME: ${{ secrets.MACOS_CERT_NAME }}
         run: |
           set -euo pipefail
-          codesign --force --deep --options runtime --timestamp --sign "$MACOS_CERT_NAME" dist/KaroSpaceBuilder.app
+          codesign --force --deep --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" dist/KaroSpaceBuilder.app
           codesign --verify --deep --strict --verbose=2 dist/KaroSpaceBuilder.app
 
       - name: Notarize and staple macOS app
