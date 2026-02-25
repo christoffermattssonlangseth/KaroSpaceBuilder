@@ -116,10 +116,94 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: python scripts/build_desktop.py
 
+      - name: Configure macOS signing
+        if: startsWith(matrix.target, 'macos')
+        shell: bash
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_CERT_NAME: ${{ secrets.MACOS_CERT_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          required=(
+            MACOS_CERT_P12_BASE64
+            MACOS_CERT_PASSWORD
+            MACOS_CERT_NAME
+            APPLE_ID
+            APPLE_APP_SPECIFIC_PASSWORD
+            APPLE_TEAM_ID
+          )
+          missing=()
+          for var in "${required[@]}"; do
+            if [[ -z "${!var:-}" ]]; then
+              missing+=("$var")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "MACOS_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
+            echo "Skipping macOS codesign/notarization. Missing secrets: ${missing[*]}"
+            exit 0
+          fi
+
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          CERT_PATH="$RUNNER_TEMP/macos_signing_cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/macos_signing.keychain-db"
+
+          echo "$MACOS_CERT_P12_BASE64" | base64 -D > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          existing_keychains="$(security list-keychains -d user | sed 's/^[[:space:]]*//' | tr -d '"')"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $existing_keychains
+
+          echo "MACOS_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
+
+      - name: Codesign macOS app
+        if: startsWith(matrix.target, 'macos') && env.MACOS_SIGNING_ENABLED == 'true'
+        shell: bash
+        env:
+          MACOS_CERT_NAME: ${{ secrets.MACOS_CERT_NAME }}
+        run: |
+          set -euo pipefail
+          codesign --force --deep --options runtime --timestamp --sign "$MACOS_CERT_NAME" dist/KaroSpaceBuilder.app
+          codesign --verify --deep --strict --verbose=2 dist/KaroSpaceBuilder.app
+
+      - name: Notarize and staple macOS app
+        if: startsWith(matrix.target, 'macos') && env.MACOS_SIGNING_ENABLED == 'true'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          NOTARY_ZIP="$RUNNER_TEMP/${{ matrix.zip_name }}"
+          ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app "$NOTARY_ZIP"
+          xcrun notarytool submit "$NOTARY_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple dist/KaroSpaceBuilder.app
+          xcrun stapler validate dist/KaroSpaceBuilder.app
+
       - name: Package macOS app
         if: startsWith(matrix.target, 'macos')
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p release
+          if [[ "${MACOS_SIGNING_ENABLED:-false}" != "true" ]]; then
+            echo "Packaging unsigned macOS app (signing secrets not configured)."
+          fi
           ditto -c -k --sequesterRsrc --keepParent dist/KaroSpaceBuilder.app release/${{ matrix.zip_name }}
 
       - name: Package Windows app
