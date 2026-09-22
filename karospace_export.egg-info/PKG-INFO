@@ -96,32 +96,52 @@ python -m karospace_export.app
 
 ## GUI Workflow
 
-1. Set input `.h5ad` and output directory.
-2. Click **Inspect H5AD** to populate searchable dropdowns from `adata.obs` and `adata.var_names`.
-3. Pick:
-   - Section groupby
-   - Initial color
-   - Additional colors
-   - Genes mode (`hvgs`, `top_mean`, `list_file`, `manual_list`)
-4. (Optional) use the `Default` profile.
-5. Click **Export**.
+1. Set input `.h5ad` or SpatialData `.zarr`, output directory, and output `.html` or `.karospace` path.
+   - Use **Save JSON** / **Import JSON** under **Input file/store** to save or restore the current parameter state.
+2. For `.zarr` inputs, the SpatialData table selector appears immediately, discovers available tables, and selects the first table by default. Choose a different table if needed.
+3. Click **Inspect Dataset** to populate searchable dropdowns from the selected table's `adata.obs`, `adata.var_names`, and `adata.layers`.
+4. Pick:
+   - Output path
+   - Section key
+   - Main cell annotation
+   - Modality or modalities to embed/export
+   - Cell annotations; the main cell annotation is pinned in this list and cannot be removed
+   - Feature list from inspected `var_names`
+   - Feature storage, which applies once across all selected modalities. The Features tab modality dropdown is limited to the modalities selected in General.
+5. Configure the KaroSpace argument groups from the navigation tabs: **General**, **Metadata**, **Features**, **Statistics**, **Neighborhoods**, **Connections**, **Viewer**, and **Sections**.
+6. Click **Build Viewer**.
 
-Result: `KaroSpace_YYYYMMDD_HHMMSS.html` in the selected output directory.
+Result: the configured output path, matching the KaroSpace CLI `--output` behavior. `.karospace` package output requires `feature_storage="sidecar"`.
 
 ## What The Builder Maps To
 
 The GUI fields map directly to KaroSpace export arguments, including:
-- `color`, `title`, `theme`, `outline_by`
-- `min_panel_size`, `spot_size`, `downsample`
-- `additional_colors`, `genes`, `use_hvgs`, `hvg_limit`
-- `marker_genes_groupby`, `marker_genes_top_n`
-- `neighbor_stats_groupby`, `neighbor_stats_permutations`, `neighbor_stats_seed`
-- `interaction_markers_groupby` and interaction marker limits
+- `output_path`, `main_cell_annotation`, `title`, `outline_by`
+- `section_key`, `section_order`, `spatial_key`, `spatial_columns`, `spatialdata_table`
+- `min_panel_size`, `spot_size`, `downsample`, `embed_reproducibility_info`
+- `cell_annotations`, `features`, `features_list`, `feature_encoding`, `feature_storage`
+- `feature_value_encoding`, `feature_manifest_path`, `feature_sidecar_shard_size`, `feature_sparse_zero_threshold`, `modalities`
+- `section_metadata`, `section_metadata_extra`, `metadata_value_order`, `metadata_labels`, `metadata_max_columns`
+- `viewer_info_html`, `tutorial`, `scalebar_unit`
+- `statistics_additional_annotations`, `statistics_modalities`, `statistics_contrast_categories`, count/normalization settings, filtering thresholds, and CPU workers
+- `wilcoxon`, Wilcoxon runtime, threshold, correction, embedding, and row-limit settings
+- `pseudobulk`, `pseudobulk_replicate_annotation` selected from inspected obs columns, pseudobulk thresholds, DESeq2 fit settings, and pseudobulk embedding limits
+- `pathway`, `pathway_gmt`, `pathway_organism`, `pathway_top_n`, `pathway_min_overlap`, `pathway_gsea_permutations`
+- `neighbor_stats_annotations`, `neighbor_stats_permutations`, `neighbor_stats_seed`
+- `interaction_markers`, `interaction_markers_top_features`, interaction marker limits, and discovery-panel limits
+- `section_rotations`, `deconvolutions`, `section_images`, and section image sizing
+
+Wilcoxon, pseudobulk, pathway enrichment, and interaction markers use checkboxes. When a checkbox is off, the related advanced arguments are hidden and the corresponding KaroSpace analysis mode is disabled.
+
+Counts and normalized layer selectors are populated from inspected AnnData layers; choose `none` for `adata.X` counts or `off` for no normalized distribution layer.
+
+The builder exports explicitly selected features and/or a `features_list` text file.
 
 Coordinates modes:
 - `auto`
-- `obsm:spatial`
-- `obs:centroid_x_y` (converted to temporary `obsm['spatial']` before export)
+- `obsm:<spatial_key>`
+- explicit `spatial_x`/`spatial_y` columns passed to KaroSpace as `spatial_columns`
+- `obs:centroid_x_y` compatibility mode
 
 ## Desktop Builds For Non-technical Users
 
