@@ -67,6 +67,11 @@ def _pyinstaller_args(onefile: bool) -> list[str]:
         "joblib",
         "threadpoolctl",
         "packaging",
+        # anndata pulls in zarr -> numcodecs, both of which resolve their own
+        # version via importlib.metadata at import time. Without their dist-info
+        # the frozen app crashes at startup with PackageNotFoundError.
+        "zarr",
+        "numcodecs",
     ):
         args.extend(["--copy-metadata", dist])
 

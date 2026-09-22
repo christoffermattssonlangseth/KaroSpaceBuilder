@@ -418,11 +418,13 @@ class SearchableListEditor(_CTK_FRAME_BASE):
         palette: dict[str, str] | None = None,
         on_change=None,
         stack_controls: bool = False,
+        allow_select_all: bool = False,
     ) -> None:
         self._palette = dict(palette or _palette_for_mode("dark"))
         self._theme = _ctk_theme_config(self._palette)
         self._on_change = on_change
         self._suspend_change_notification = False
+        self._allow_select_all = allow_select_all
         super().__init__(parent, **self._theme["sub_frame"])
         self._choices: list[str] = []
         self._required_items: list[str] = []
@@ -476,6 +478,22 @@ class SearchableListEditor(_CTK_FRAME_BASE):
             self.clear_btn.grid(row=1, column=2, sticky="ew")
         else:
             self.clear_btn.grid(row=0, column=3)
+
+        self.select_all_btn: ctk.CTkButton | None = None
+        if self._allow_select_all:
+            self.select_all_btn = ctk.CTkButton(
+                controls,
+                text="Select all",
+                command=self.add_all,
+                width=96,
+                **self._theme["secondary_button"],
+            )
+            _bind_secondary_button_feedback(self.select_all_btn, lambda: self._palette)
+            if stack_controls:
+                controls.columnconfigure(3, weight=1)
+                self.select_all_btn.grid(row=1, column=3, sticky="ew", padx=(6, 0))
+            else:
+                self.select_all_btn.grid(row=0, column=4, padx=(6, 0))
 
         list_wrap = ctk.CTkFrame(self, **self._theme["sub_frame"])
         list_wrap.grid(row=2, column=0, sticky="ew", pady=(8, 0))
@@ -559,6 +577,11 @@ class SearchableListEditor(_CTK_FRAME_BASE):
             removed = True
         if removed:
             self._notify_change()
+
+    def add_all(self) -> None:
+        if not self._choices:
+            return
+        self.set_items([*self.get_items(), *self._choices])
 
     def set_items(self, values: list[str] | tuple[str, ...]) -> None:
         self._suspend_change_notification = True
