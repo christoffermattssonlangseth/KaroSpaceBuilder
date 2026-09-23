@@ -58,6 +58,39 @@ def _default_output_dir() -> Path:
             continue
     return Path.home()
 
+
+# Sibling artifacts that a single export writes alongside the primary output and
+# that therefore share its stem. Used to detect collisions with a previous export.
+_OUTPUT_RELATED_SUFFIXES = (".features.json", ".features", ".karospace", ".loader.html")
+
+
+def _unique_output_path(output_path: Path) -> Path:
+    """Return an output path whose stem does not collide with an existing export.
+
+    A single export produces several sibling artifacts that share the output
+    stem (the HTML/``.karospace`` file plus ``<stem>.features.json``,
+    ``<stem>.features/``, ``<stem>.karospace`` and ``<stem>.loader.html``).
+    To avoid overwriting a previous export we pick the first stem — the given
+    name, then ``name-1``, ``name-2``, ... — for which none of those siblings
+    already exist.
+    """
+    parent = output_path.parent
+    suffix = output_path.suffix
+    base_stem = output_path.stem
+    related_suffixes = (suffix, *_OUTPUT_RELATED_SUFFIXES)
+
+    def _stem_taken(stem: str) -> bool:
+        return any((parent / f"{stem}{rel}").exists() for rel in related_suffixes)
+
+    if not _stem_taken(base_stem):
+        return output_path
+    index = 1
+    while True:
+        candidate_stem = f"{base_stem}-{index}"
+        if not _stem_taken(candidate_stem):
+            return parent / f"{candidate_stem}{suffix}"
+        index += 1
+
 _KI_COLORS = {
     "plum_dark": "#4F0433",
     "orange": "#FF876F",
@@ -2059,14 +2092,17 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             return
         if self.also_karospace_var.get() and self.feature_storage_var.get().strip().lower() != "sidecar":
             self.feature_storage_var.set("sidecar")
+            self._update_export_estimate()
 
     def _on_feature_storage_changed(self) -> None:
         # Embedded storage produces no sidecar, so the .karospace package is not
         # available; keep the checkbox consistent with the chosen storage.
-        if not hasattr(self, "also_karospace_var"):
-            return
-        if self.feature_storage_var.get().strip().lower() != "sidecar":
-            self.also_karospace_var.set(False)
+        if hasattr(self, "also_karospace_var"):
+            if self.feature_storage_var.get().strip().lower() != "sidecar":
+                self.also_karospace_var.set(False)
+        # HTML size estimate differs by storage mode (embedded bakes features in;
+        # sidecar loads them on demand), so refresh it when the mode changes.
+        self._update_export_estimate()
 
     def _selected_features_by_modality(self) -> dict[str, list[str]]:
         self._save_active_feature_selection()
@@ -2315,6 +2351,35 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             return
 
         cells, cell_note = self._estimate_exported_cell_count()
+
+        storage = (
+            self.feature_storage_var.get().strip().lower()
+            if hasattr(self, "feature_storage_var")
+            else "embedded"
+        )
+        if storage == "sidecar":
+            # Sidecar storage never bakes feature vectors into the HTML; they load
+            # from shards on demand, so HTML size does not grow with feature count
+            # and a manual feature selection is optional.
+            if cells is None:
+                note = cell_note or "complete the export settings"
+                self.export_estimate_summary_label.configure(
+                    text=f"Estimate waiting for valid settings: {note}.",
+                    text_color=self._app_palette["text"],
+                )
+                self.export_estimate_warning_label.configure(text="", text_color=self._app_palette["muted"])
+                return
+            summary = (
+                f"Export estimate: {self._format_count(cells)} cells. Feature values are stored in "
+                "sidecar shards and load on demand, so HTML size does not grow with the number of "
+                "features (all features are bundled)."
+            )
+            if cell_note:
+                summary = f"{summary} Note: {cell_note}."
+            self.export_estimate_summary_label.configure(text=summary, text_color=self._app_palette["text"])
+            self.export_estimate_warning_label.configure(text="", text_color=self._app_palette["muted"])
+            return
+
         genes, gene_note = self._estimate_exported_gene_count()
         notes = [note for note in (cell_note, gene_note) if note]
         if cells is None or genes is None:
@@ -2992,7 +3057,9 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         self._field_label(genes_inner, "Feature Selection").grid(row=0, column=0, sticky="w", pady=(0, 6))
         feature_selection_hint = self._subheader_label(
             genes_inner,
-            "Selections are saved separately for each Modality and exported together.",
+            "Selections are saved separately for each Modality and exported together. "
+            "Optional in sidecar storage (all features are bundled); required for "
+            "embedded storage, where only the picked features are baked into the HTML.",
         )
         feature_selection_hint.configure(wraplength=500, justify="left")
         feature_selection_hint.grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -5283,6 +5350,15 @@ class ExportApp(ctk.CTk if ctk is not None else object):
                 f"The output directory {output_html_path.parent} is not writable. "
                 "Choose a writable location such as your Downloads or Documents folder."
             )
+        # Never overwrite a previous export: if the target name (or any of its
+        # sibling artifacts) already exists, fall back to name-1, name-2, ...
+        unique_output_html_path = _unique_output_path(output_html_path)
+        if unique_output_html_path != output_html_path:
+            self._log(
+                f"Output '{output_html_path.name}' already exists; writing to "
+                f"'{unique_output_html_path.name}' to avoid overwriting."
+            )
+        output_html_path = unique_output_html_path
         outdir = output_html_path.parent
 
         coords_raw = self.coords_var.get().strip().lower() or "auto"
@@ -5358,10 +5434,17 @@ class ExportApp(ctk.CTk if ctk is not None else object):
                 raise ValueError("Modality choices are not available in the inspected dataset: " + ", ".join(invalid_modalities[:10]))
         selected_features_by_modality = self._selected_features_by_modality()
 
+        feature_storage = self.feature_storage_var.get().strip().lower() or "embedded"
+        if feature_storage not in {"embedded", "sidecar"}:
+            raise ValueError("Feature storage must be embedded or sidecar.")
+
+        # Sidecar storage writes every feature to shards regardless of the manual
+        # selection, so a hand-picked feature is only required for embedded storage
+        # (where the picked features are baked inline into the HTML).
         genes = self._resolve_features(
             h5ad_path,
             features_by_modality=selected_features_by_modality,
-            require_features=features_list is None,
+            require_features=features_list is None and feature_storage == "embedded",
         )
 
         feature_encoding = self.feature_encoding_var.get().strip().lower() or "auto"
@@ -5370,9 +5453,6 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         feature_value_encoding = self.feature_value_encoding_var.get().strip().lower() or "uint16"
         if feature_value_encoding not in {"uint16", "uint8"}:
             raise ValueError("Feature value encoding must be uint16 or uint8.")
-        feature_storage = self.feature_storage_var.get().strip().lower() or "embedded"
-        if feature_storage not in {"embedded", "sidecar"}:
-            raise ValueError("Feature storage must be embedded or sidecar.")
         if output_html_path.suffix.lower() == ".karospace" and feature_storage != "sidecar":
             raise ValueError(".karospace output requires Feature storage to be sidecar.")
         # Only package a companion .karospace when the export produces a sidecar
