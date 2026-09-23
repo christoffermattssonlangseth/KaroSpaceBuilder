@@ -919,6 +919,7 @@ class BuilderConfig:
     feature_encoding: str
     feature_value_encoding: str
     feature_storage: str
+    also_export_karospace: bool
     feature_manifest_path: str | None
     feature_sidecar_shard_size: int
     feature_sparse_zero_threshold: float
@@ -2027,6 +2028,22 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         self._load_feature_selection_for_modality(next_modality)
         self._update_export_estimate()
 
+    def _on_also_karospace_toggled(self) -> None:
+        # A .karospace can only be built from a sidecar bundle, so enabling the
+        # package implies sidecar storage.
+        if not hasattr(self, "also_karospace_var"):
+            return
+        if self.also_karospace_var.get() and self.feature_storage_var.get().strip().lower() != "sidecar":
+            self.feature_storage_var.set("sidecar")
+
+    def _on_feature_storage_changed(self) -> None:
+        # Embedded storage produces no sidecar, so the .karospace package is not
+        # available; keep the checkbox consistent with the chosen storage.
+        if not hasattr(self, "also_karospace_var"):
+            return
+        if self.feature_storage_var.get().strip().lower() != "sidecar":
+            self.also_karospace_var.set(False)
+
     def _selected_features_by_modality(self) -> dict[str, list[str]]:
         self._save_active_feature_selection()
         selected: dict[str, list[str]] = {}
@@ -2473,7 +2490,8 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
         self.feature_encoding_var = tk.StringVar(value="auto")
         self.feature_value_encoding_var = tk.StringVar(value="uint16")
-        self.feature_storage_var = tk.StringVar(value="embedded")
+        self.feature_storage_var = tk.StringVar(value="sidecar")
+        self.also_karospace_var = tk.BooleanVar(value=True)
         self.features_list_var = tk.StringVar()
         self.feature_manifest_path_var = tk.StringVar()
         self.feature_sidecar_shard_size_var = tk.StringVar(value="256")
@@ -3014,6 +3032,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             values=["embedded", "sidecar"],
             width=120,
             state="readonly",
+            command=lambda _choice: self._on_feature_storage_changed(),
             **self._theme["combo"],
         )
         self._register_combo_widget(self.feature_storage_combo)
@@ -3071,6 +3090,25 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         )
         self._register_entry_widget(self.feature_sparse_zero_threshold_entry)
         self.feature_sparse_zero_threshold_entry.grid(row=0, column=3, sticky="ew")
+
+        karospace_row = self._make_sub_frame(storage_inner)
+        karospace_row.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        karospace_row.columnconfigure(0, weight=1)
+        self.also_karospace_check = ctk.CTkCheckBox(
+            karospace_row,
+            text="Also create .karospace package (bundles all features)",
+            variable=self.also_karospace_var,
+            command=self._on_also_karospace_toggled,
+            **self._theme["checkbox"],
+        )
+        self._register_checkbox_widget(self.also_karospace_check)
+        self.also_karospace_check.grid(row=0, column=0, sticky="w")
+        self.also_karospace_hint = self._subheader_label(
+            karospace_row,
+            "Requires sidecar storage. Produces a portable .karospace next to the HTML.",
+        )
+        self.also_karospace_hint.configure(wraplength=500, justify="left")
+        self.also_karospace_hint.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
         connections_tab.columnconfigure(0, weight=1)
         self._section_label(connections_tab, "CONNECTIONS").grid(row=0, column=0, sticky="w", pady=(0, 6))
@@ -4147,7 +4185,8 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         self.numba_jit_var.set(False)
         self.feature_encoding_var.set("auto")
         self.feature_value_encoding_var.set("uint16")
-        self.feature_storage_var.set("embedded")
+        self.feature_storage_var.set("sidecar")
+        self.also_karospace_var.set(True)
         self.features_list_var.set("")
         self.feature_manifest_path_var.set("")
         self.feature_sidecar_shard_size_var.set("256")
@@ -5301,6 +5340,14 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             raise ValueError("Feature storage must be embedded or sidecar.")
         if output_html_path.suffix.lower() == ".karospace" and feature_storage != "sidecar":
             raise ValueError(".karospace output requires Feature storage to be sidecar.")
+        # Only package a companion .karospace when the export produces a sidecar
+        # HTML bundle (embedded storage has nothing to package, and a .karospace
+        # output path is already the package itself).
+        also_export_karospace = (
+            bool(self.also_karospace_var.get())
+            and feature_storage == "sidecar"
+            and output_html_path.suffix.lower() != ".karospace"
+        )
         feature_manifest_path = self._parse_optional_text(self.feature_manifest_path_var.get())
         feature_sidecar_shard_size = self._parse_positive_int(
             "Feature sidecar shard size", self.feature_sidecar_shard_size_var.get()
@@ -5515,6 +5562,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             feature_encoding=feature_encoding,
             feature_value_encoding=feature_value_encoding,
             feature_storage=feature_storage,
+            also_export_karospace=also_export_karospace,
             feature_manifest_path=feature_manifest_path,
             feature_sidecar_shard_size=feature_sidecar_shard_size,
             feature_sparse_zero_threshold=feature_sparse_zero_threshold,
@@ -6145,6 +6193,21 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             export_elapsed = time.perf_counter() - export_started
             self._raise_if_cancelled()
             emit_progress(95, "Finalizing", f"Viewer bundle created in {export_elapsed:.1f}s: {output_html_path}")
+
+            if getattr(config, "also_export_karospace", False) and output_html_path.suffix.lower() == ".html":
+                self._raise_if_cancelled()
+                emit_progress(97, "Packaging", "Creating .karospace package from the sidecar bundle...")
+                try:
+                    import karospace as _karospace
+
+                    package_str = _karospace.package_sidecar_viewer(str(output_html_path))
+                    package_path = Path(package_str)
+                    emit_progress(98, "Packaging", f"Created .karospace package: {package_path}")
+                    self._queue.put(("log", f"Loader for the package: {package_path.with_suffix('.loader.html')}"))
+                except Exception as exc:  # noqa: BLE001
+                    self._queue.put(
+                        ("log", f"Warning: HTML viewer was exported but the .karospace package failed: {exc}")
+                    )
 
             result = AppResult(
                 outdir=output_html_path.parent,
