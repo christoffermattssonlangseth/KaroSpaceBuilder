@@ -34,6 +34,30 @@ else:
 
 _CTK_FRAME_BASE = ctk.CTkFrame if ctk is not None else object
 
+
+def _default_output_dir() -> Path:
+    """Return a writable default output directory.
+
+    When the app is launched from Finder/LaunchServices the process working
+    directory is ``/`` (read-only), so ``Path.cwd()`` is unsafe as a default.
+    Prefer the user's Downloads/Documents/home, falling back to the CWD only
+    when it is actually writable.
+    """
+    candidates = [Path.home() / "Downloads", Path.home() / "Documents", Path.home()]
+    try:
+        cwd = Path.cwd()
+    except OSError:
+        cwd = None
+    if cwd is not None:
+        candidates.append(cwd)
+    for candidate in candidates:
+        try:
+            if candidate.is_dir() and os.access(candidate, os.W_OK):
+                return candidate
+        except OSError:
+            continue
+    return Path.home()
+
 _KI_COLORS = {
     "plum_dark": "#4F0433",
     "orange": "#FF876F",
@@ -2466,7 +2490,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
 
     def _build_variables(self) -> None:
         self.h5ad_var = tk.StringVar()
-        self.outdir_var = tk.StringVar(value=str(Path.cwd()))
+        self.outdir_var = tk.StringVar(value=str(_default_output_dir()))
         self.output_html_var = tk.StringVar(value="karospace.html")
         self.coords_var = tk.StringVar(value="auto")
         self.spatial_key_var = tk.StringVar(value="spatial")
@@ -4155,7 +4179,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
     def _apply_preset(self, name: str, *, log: bool = True) -> None:
         # Shared baseline.
         if not self.outdir_var.get().strip():
-            self.outdir_var.set(str(Path.cwd().resolve()))
+            self.outdir_var.set(str(_default_output_dir().resolve()))
         if not self.output_html_var.get().strip():
             self.output_html_var.set("karospace.html")
         self.coords_var.set("auto")
@@ -4337,7 +4361,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             variable.set(path)
 
     def _choose_output_file(self) -> None:
-        base_dir = Path(self.outdir_var.get().strip() or Path.cwd()).expanduser()
+        base_dir = Path(self.outdir_var.get().strip() or _default_output_dir()).expanduser()
         current = Path(self.output_html_var.get().strip() or "karospace.html").expanduser()
         initial_dir = current.parent if current.is_absolute() else base_dir
         initial_file = current.name if current.name else "karospace.html"
@@ -4445,7 +4469,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
     def _save_parameter_state_json(self) -> None:
         current_output = Path(self.output_html_var.get().strip() or "karospace.html").expanduser()
         initial_file = f"{current_output.stem or 'karospace'}-parameters.json"
-        initial_dir = Path(self.outdir_var.get().strip() or Path.cwd()).expanduser()
+        initial_dir = Path(self.outdir_var.get().strip() or _default_output_dir()).expanduser()
         path = filedialog.asksaveasfilename(
             initialdir=str(initial_dir),
             initialfile=initial_file,
@@ -4539,7 +4563,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             self._loading_parameter_state = False
 
     def _import_parameter_state_json(self) -> None:
-        initial_dir = Path(self.outdir_var.get().strip() or Path.cwd()).expanduser()
+        initial_dir = Path(self.outdir_var.get().strip() or _default_output_dir()).expanduser()
         path = filedialog.askopenfilename(
             initialdir=str(initial_dir),
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
@@ -5247,7 +5271,18 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         if not h5ad_path.exists():
             raise ValueError(f"Input file not found: {h5ad_path}")
 
-        output_html_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_html_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot write to the output directory {output_html_path.parent}: {exc.strerror or exc}. "
+                "Choose a writable location such as your Downloads or Documents folder."
+            ) from exc
+        if not os.access(output_html_path.parent, os.W_OK):
+            raise ValueError(
+                f"The output directory {output_html_path.parent} is not writable. "
+                "Choose a writable location such as your Downloads or Documents folder."
+            )
         outdir = output_html_path.parent
 
         coords_raw = self.coords_var.get().strip().lower() or "auto"
@@ -6313,7 +6348,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
             return self._last_output_html
         output_text = self.output_html_var.get().strip() if hasattr(self, "output_html_var") else ""
         if output_text:
-            base = Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else Path.cwd()
+            base = Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else _default_output_dir()
             configured = Path(output_text).expanduser()
             configured = configured if configured.is_absolute() else base / configured
             if configured.exists():
@@ -6377,7 +6412,7 @@ class ExportApp(ctk.CTk if ctk is not None else object):
         if self._last_outdir is not None:
             path = self._last_outdir
         elif self.output_html_var.get().strip():
-            base = Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else Path.cwd()
+            base = Path(self.outdir_var.get().strip()).expanduser() if self.outdir_var.get().strip() else _default_output_dir()
             configured = Path(self.output_html_var.get().strip()).expanduser()
             path = (configured if configured.is_absolute() else base / configured).parent
         else:
